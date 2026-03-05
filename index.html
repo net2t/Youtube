@@ -6,6 +6,7 @@
 <title>STORYFORGE — Content Control System</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Orbitron:wght@400;700;900&family=Rajdhani:wght@300;400;600&display=swap" rel="stylesheet">
+<script src="https://accounts.google.com/gsi/client" async></script>
 <style>
   :root {
     --bg: #050505;
@@ -871,65 +872,151 @@
 
   <!-- ══════════ YOUTUBE PAGE ══════════ -->
   <div class="page" id="page-youtube">
-    <div class="panel" style="max-width:900px">
-      <div class="panel-title">YouTube Metadata Generator</div>
-      <p style="font-size:13px;color:var(--text-dim);margin-bottom:20px">Select a story to auto-generate YouTube title, description, and tags. Copy and paste directly to YouTube Studio.</p>
 
-      <div class="form-group" style="margin-bottom:16px">
-        <label>Select Story</label>
-        <select id="yt-story-select" onchange="populateYouTube()">
-          <option value="">-- Choose a story --</option>
-        </select>
+    <!-- Auth Banner -->
+    <div id="yt-auth-banner" style="max-width:900px;margin-bottom:16px;padding:16px 20px;background:rgba(255,0,85,0.07);border:1px solid rgba(255,0,85,0.25);display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px">
+      <div>
+        <div style="font-family:'Orbitron',monospace;font-size:11px;color:var(--accent3);letter-spacing:2px;margin-bottom:4px">⚡ YOUTUBE — NOT CONNECTED</div>
+        <div style="font-family:'Share Tech Mono',monospace;font-size:11px;color:var(--text-dim)">Sign in with your channel's Google account to enable direct upload</div>
       </div>
+      <button class="btn-primary" onclick="ytSignIn()" style="background:var(--accent3);white-space:nowrap">
+        🔐 SIGN IN WITH GOOGLE
+      </button>
+    </div>
 
-      <div class="form-grid">
-        <div class="form-group full">
-          <label>YouTube Title <span style="color:var(--text-dim)">(max 100 chars)</span></label>
-          <input id="yt-title" maxlength="100" placeholder="Auto-generated from story">
-          <div class="char-count"><span id="yt-title-count">0</span>/100</div>
-        </div>
-        <div class="form-group full">
-          <label>Description</label>
-          <textarea id="yt-desc" style="min-height:200px"></textarea>
-        </div>
-        <div class="form-group full">
-          <label>Tags <span style="color:var(--text-dim)">(comma separated)</span></label>
-          <textarea id="yt-tags" style="min-height:80px"></textarea>
-        </div>
-        <div class="form-group">
-          <label>Category</label>
-          <select id="yt-category">
-            <option>Education</option>
-            <option>Entertainment</option>
-            <option>Kids & Family</option>
-            <option>Film & Animation</option>
-          </select>
-        </div>
-        <div class="form-group">
-          <label>Privacy</label>
-          <select id="yt-privacy">
-            <option>Public</option>
-            <option>Unlisted</option>
-            <option>Private</option>
-          </select>
-        </div>
-        <div class="form-group">
-          <label>Made for Kids</label>
-          <select id="yt-kids"><option>Yes</option><option>No</option></select>
-        </div>
-        <div class="form-group">
-          <label>Language</label>
-          <select id="yt-lang"><option>English</option><option>Hindi</option><option>Spanish</option></select>
+    <div id="yt-auth-ok" style="max-width:900px;margin-bottom:16px;padding:14px 20px;background:rgba(0,255,136,0.06);border:1px solid rgba(0,255,136,0.2);display:none;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px">
+      <div style="display:flex;align-items:center;gap:12px">
+        <div style="width:10px;height:10px;border-radius:50%;background:var(--accent);box-shadow:var(--glow);animation:pulse 2s infinite"></div>
+        <div>
+          <div style="font-family:'Orbitron',monospace;font-size:11px;color:var(--accent);letter-spacing:2px">✓ YOUTUBE CONNECTED</div>
+          <div style="font-family:'Share Tech Mono',monospace;font-size:11px;color:var(--text-dim)" id="yt-user-email">—</div>
         </div>
       </div>
+      <button class="btn-copy" onclick="ytSignOut()">SIGN OUT</button>
+    </div>
 
-      <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:8px">
-        <button class="btn-copy" onclick="copyField('yt-title','Copy Title')">COPY TITLE</button>
-        <button class="btn-copy" onclick="copyField('yt-desc','Copy Desc')">COPY DESCRIPTION</button>
-        <button class="btn-copy" onclick="copyField('yt-tags','Copy Tags')">COPY TAGS</button>
-        <button class="btn-primary" onclick="copyAllYT()" style="font-size:9px">COPY ALL</button>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;max-width:900px">
+
+      <!-- Left: Story picker + metadata -->
+      <div class="panel" style="grid-column:1/-1">
+        <div class="panel-title">Story & Metadata</div>
+        <div class="form-grid">
+          <div class="form-group">
+            <label>Select Story</label>
+            <select id="yt-story-select" onchange="populateYouTube()">
+              <option value="">-- Choose a story --</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Privacy</label>
+            <select id="yt-privacy">
+              <option>Public</option>
+              <option>Unlisted</option>
+              <option selected>Private</option>
+            </select>
+          </div>
+          <div class="form-group full">
+            <label>YouTube Title <span style="color:var(--text-dim)">(max 100 chars)</span></label>
+            <input id="yt-title" maxlength="100" placeholder="Auto-generated from story" oninput="document.getElementById('yt-title-count').textContent=this.value.length">
+            <div class="char-count"><span id="yt-title-count">0</span>/100</div>
+          </div>
+          <div class="form-group full">
+            <label>Description</label>
+            <textarea id="yt-desc" style="min-height:160px"></textarea>
+          </div>
+          <div class="form-group full">
+            <label>Tags <span style="color:var(--text-dim)">(comma separated)</span></label>
+            <textarea id="yt-tags" style="min-height:60px"></textarea>
+          </div>
+          <div class="form-group">
+            <label>Category</label>
+            <select id="yt-category">
+              <option value="27">Education</option>
+              <option value="24">Entertainment</option>
+              <option value="1">Film & Animation</option>
+              <option value="22">People & Blogs</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Made for Kids</label>
+            <select id="yt-kids"><option value="true">Yes</option><option value="false">No</option></select>
+          </div>
+        </div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:4px">
+          <button class="btn-copy" onclick="copyField('yt-title','Title')">COPY TITLE</button>
+          <button class="btn-copy" onclick="copyField('yt-desc','Description')">COPY DESC</button>
+          <button class="btn-copy" onclick="copyField('yt-tags','Tags')">COPY TAGS</button>
+          <button class="btn-copy" onclick="copyAllYT()">COPY ALL</button>
+        </div>
+      </div>
+
+      <!-- Video file for YT -->
+      <div class="panel">
+        <div class="panel-title">Video File for YouTube</div>
+        <div class="upload-zone" id="yt-video-zone">
+          <input type="file" accept="video/*" onchange="handleYTVideo(this)">
+          <span class="upload-icon">🎬</span>
+          <div class="upload-label">SELECT VIDEO FILE<br>MP4 / MOV recommended</div>
+          <div class="upload-filename" id="yt-video-name"></div>
+        </div>
+        <div style="margin-top:10px;font-family:'Share Tech Mono',monospace;font-size:10px;color:var(--text-dim);line-height:1.8">
+          ⚠ Max 256GB / 12 hours<br>
+          ✓ MP4 (H.264) recommended<br>
+          ✓ 1920×1080 or 1280×720
+        </div>
+      </div>
+
+      <!-- Thumbnail file for YT -->
+      <div class="panel">
+        <div class="panel-title">Thumbnail for YouTube</div>
+        <div class="upload-zone" id="yt-thumb-zone">
+          <input type="file" accept="image/*" onchange="handleYTThumb(this)">
+          <span class="upload-icon">🖼️</span>
+          <div class="upload-label">SELECT THUMBNAIL<br>JPG / PNG, min 1280×720</div>
+          <div class="upload-filename" id="yt-thumb-name"></div>
+        </div>
+        <div id="yt-thumb-preview-wrap" style="display:none;margin-top:10px">
+          <img id="yt-thumb-preview" style="width:100%;border:1px solid var(--border);display:block">
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Upload Progress -->
+    <div class="panel" style="max-width:900px;margin-top:16px">
+      <div class="panel-title">Upload to YouTube</div>
+
+      <div id="yt-upload-stages" style="display:none;margin-bottom:16px">
+        <div class="upload-stage" style="margin-bottom:10px"><div class="stage-indicator" id="yts1"></div><span id="yts1-label">Preparing metadata</span></div>
+        <div class="upload-stage" style="margin-bottom:10px"><div class="stage-indicator" id="yts2"></div><span id="yts2-label">Uploading video to YouTube</span></div>
+        <div class="upload-stage" style="margin-bottom:10px"><div class="stage-indicator" id="yts3"></div><span id="yts3-label">Setting thumbnail</span></div>
+        <div class="upload-stage" style="margin-bottom:10px"><div class="stage-indicator" id="yts4"></div><span id="yts4-label">Saving to Google Sheet</span></div>
+        <div class="big-progress" style="margin-top:8px"><div class="big-progress-fill" id="yt-upload-bar"></div></div>
+        <div style="font-family:'Share Tech Mono',monospace;font-size:11px;color:var(--text-dim);margin-top:8px" id="yt-upload-pct">0%</div>
+      </div>
+
+      <div id="yt-upload-result" style="display:none;padding:14px;background:rgba(0,255,136,0.05);border:1px solid rgba(0,255,136,0.2);font-family:'Share Tech Mono',monospace;font-size:12px;margin-bottom:16px">
+        <div style="color:var(--accent);margin-bottom:8px">✓ UPLOAD COMPLETE</div>
+        <div>Video ID: <span id="yt-result-id" style="color:var(--accent2)">—</span></div>
+        <div>URL: <a id="yt-result-url" href="#" target="_blank" style="color:var(--accent2)">—</a></div>
+        <div style="margin-top:8px;color:var(--text-dim)">Status updated in Google Sheet ✓</div>
+      </div>
+
+      <div id="yt-upload-error" style="display:none;padding:14px;background:rgba(255,0,85,0.05);border:1px solid rgba(255,0,85,0.2);font-family:'Share Tech Mono',monospace;font-size:12px;color:var(--accent3);margin-bottom:16px"></div>
+
+      <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
+        <button class="btn-primary" onclick="uploadToYouTube()" id="yt-upload-btn" style="background:var(--accent3)">
+          ▶ UPLOAD TO YOUTUBE NOW
+        </button>
+        <div style="display:flex;align-items:center;gap:8px">
+          <input type="checkbox" id="yt-auto-trigger" style="width:auto;accent-color:var(--accent)">
+          <label style="font-family:'Share Tech Mono',monospace;font-size:11px;color:var(--text-dim);text-transform:none;letter-spacing:0">
+            Auto-upload when status → "Uploaded"
+          </label>
+        </div>
       </div>
     </div>
+
   </div>
 
   <!-- ══════════ UPLOAD PAGE ══════════ -->
@@ -1061,9 +1148,7 @@ document.addEventListener('DOMContentLoaded', () => {
   loadConfig();
   loadData();
   startClock();
-  document.getElementById('yt-title').addEventListener('input', () => {
-    document.getElementById('yt-title-count').textContent = document.getElementById('yt-title').value.length;
-  });
+  initGoogleAuth();
 });
 
 function loadConfig() {
@@ -1331,7 +1416,284 @@ async function submitStory() {
   }
 }
 
-// ── YOUTUBE ──────────────────────────────────────────────
+// ── YOUTUBE OAUTH ──────────────────────────────────────────────
+const YT_CLIENT_ID = '165516915479-27ks2km5q9sbod00uvsdmda3vfgf0toa.apps.googleusercontent.com';
+const YT_SCOPES = 'https://www.googleapis.com/auth/youtube.upload https://www.googleapis.com/auth/youtube https://www.googleapis.com/auth/userinfo.email';
+
+let ytTokenClient = null;
+let ytAccessToken = null;
+let ytUserEmail = null;
+let ytVideoFile = null;
+let ytThumbFile = null;
+
+function initGoogleAuth() {
+  if (!window.google) { setTimeout(initGoogleAuth, 500); return; }
+  ytTokenClient = google.accounts.oauth2.initTokenClient({
+    client_id: YT_CLIENT_ID,
+    scope: YT_SCOPES,
+    callback: onYTTokenReceived,
+  });
+}
+
+function ytSignIn() {
+  if (!ytTokenClient) { notify('⚠ Google auth still loading, try again'); initGoogleAuth(); return; }
+  ytTokenClient.requestAccessToken();
+}
+
+async function onYTTokenReceived(resp) {
+  if (resp.error) { notify('⚠ Sign-in failed: ' + resp.error); return; }
+  ytAccessToken = resp.access_token;
+  // Get user email
+  try {
+    const r = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+      headers: { Authorization: 'Bearer ' + ytAccessToken }
+    });
+    const u = await r.json();
+    ytUserEmail = u.email;
+    document.getElementById('yt-user-email').textContent = ytUserEmail;
+  } catch(e) {}
+  document.getElementById('yt-auth-banner').style.display = 'none';
+  document.getElementById('yt-auth-ok').style.display = 'flex';
+  notify('✅ Connected to YouTube as ' + (ytUserEmail || 'your account'));
+}
+
+function ytSignOut() {
+  if (ytAccessToken) google.accounts.oauth2.revoke(ytAccessToken);
+  ytAccessToken = null;
+  ytUserEmail = null;
+  document.getElementById('yt-auth-banner').style.display = 'flex';
+  document.getElementById('yt-auth-ok').style.display = 'none';
+  notify('Signed out of YouTube');
+}
+
+// ── YOUTUBE FILE HANDLERS ──────────────────────────────────────────────
+function handleYTVideo(input) {
+  ytVideoFile = input.files[0];
+  if (ytVideoFile) {
+    document.getElementById('yt-video-name').textContent = '📎 ' + ytVideoFile.name + ' (' + formatBytes(ytVideoFile.size) + ')';
+  }
+}
+
+function handleYTThumb(input) {
+  ytThumbFile = input.files[0];
+  if (ytThumbFile) {
+    document.getElementById('yt-thumb-name').textContent = '📎 ' + ytThumbFile.name;
+    const reader = new FileReader();
+    reader.onload = e => {
+      document.getElementById('yt-thumb-preview').src = e.target.result;
+      document.getElementById('yt-thumb-preview-wrap').style.display = 'block';
+    };
+    reader.readAsDataURL(ytThumbFile);
+  }
+}
+
+function formatBytes(b) {
+  if (b > 1e9) return (b/1e9).toFixed(1) + ' GB';
+  if (b > 1e6) return (b/1e6).toFixed(1) + ' MB';
+  return (b/1e3).toFixed(0) + ' KB';
+}
+
+// ── YOUTUBE UPLOAD ENGINE ──────────────────────────────────────────────
+async function uploadToYouTube() {
+  if (!ytAccessToken) { notify('⚠ Please sign in to YouTube first'); ytSignIn(); return; }
+  if (!ytVideoFile) { notify('⚠ Please select a video file'); return; }
+
+  const title = document.getElementById('yt-title').value.trim();
+  const desc  = document.getElementById('yt-desc').value.trim();
+  const tags  = document.getElementById('yt-tags').value.split(',').map(t => t.trim()).filter(Boolean);
+  const cat   = document.getElementById('yt-category').value;
+  const priv  = document.getElementById('yt-privacy').value.toUpperCase();
+  const kids  = document.getElementById('yt-kids').value === 'true';
+
+  if (!title) { notify('⚠ Please enter a YouTube title'); return; }
+
+  // Reset UI
+  document.getElementById('yt-upload-stages').style.display = 'block';
+  document.getElementById('yt-upload-result').style.display = 'none';
+  document.getElementById('yt-upload-error').style.display = 'none';
+  document.getElementById('yt-upload-btn').disabled = true;
+  ['yts1','yts2','yts3','yts4'].forEach(id => {
+    const el = document.getElementById(id);
+    el.className = 'stage-indicator';
+  });
+
+  const setStage = (n, state) => {
+    document.getElementById('yts'+n).className = 'stage-indicator ' + state;
+  };
+  const setBar = pct => {
+    document.getElementById('yt-upload-bar').style.width = pct + '%';
+    document.getElementById('yt-upload-pct').textContent = pct + '%';
+  };
+
+  try {
+    // Stage 1: Prepare
+    setStage(1,'active');
+    setBar(5);
+    await delay(400);
+    setStage(1,'done');
+    setBar(10);
+
+    // Stage 2: Upload video (resumable upload)
+    setStage(2,'active');
+    const videoId = await uploadVideoResumable(ytVideoFile, {
+      title, description: desc, tags,
+      categoryId: cat, privacyStatus: priv,
+      madeForKids: kids
+    }, (pct) => {
+      setBar(10 + Math.round(pct * 0.75)); // 10-85%
+    });
+
+    setStage(2,'done');
+    setBar(85);
+
+    // Stage 3: Set thumbnail
+    setStage(3,'active');
+    if (ytThumbFile) {
+      await uploadThumbnailToYT(videoId, ytThumbFile);
+      setStage(3,'done');
+    } else {
+      setStage(3,'done');
+    }
+    setBar(92);
+
+    // Stage 4: Save to sheet
+    setStage(4,'active');
+    const ytUrl = `https://www.youtube.com/watch?v=${videoId}`;
+    if (cfg.url) {
+      try {
+        await fetch(cfg.url, {
+          method: 'POST',
+          body: JSON.stringify({ action: 'saveYouTubeResult', videoId, youtubeUrl: ytUrl, storyTitle: title })
+        });
+      } catch(e) {}
+    }
+    setStage(4,'done');
+    setBar(100);
+
+    // Show result
+    document.getElementById('yt-result-id').textContent = videoId;
+    const linkEl = document.getElementById('yt-result-url');
+    linkEl.textContent = ytUrl;
+    linkEl.href = ytUrl;
+    document.getElementById('yt-upload-result').style.display = 'block';
+    notify('🎉 Video live on YouTube!');
+
+    // Auto-update story status in allStories
+    const idx = document.getElementById('yt-story-select').value;
+    if (idx !== '') {
+      allStories[idx].Status = 'Published';
+      allStories[idx]['YouTube URL'] = ytUrl;
+      allStories[idx]['Video ID'] = videoId;
+      renderAll();
+    }
+
+  } catch(err) {
+    const errEl = document.getElementById('yt-upload-error');
+    errEl.textContent = '⚠ Upload failed: ' + (err.message || err);
+    errEl.style.display = 'block';
+    notify('⚠ Upload failed — see error above');
+  } finally {
+    document.getElementById('yt-upload-btn').disabled = false;
+  }
+}
+
+async function uploadVideoResumable(file, meta, onProgress) {
+  // Step 1: Initiate resumable upload session
+  const initRes = await fetch(
+    'https://www.googleapis.com/upload/youtube/v3/videos?uploadType=resumable&part=snippet,status',
+    {
+      method: 'POST',
+      headers: {
+        'Authorization': 'Bearer ' + ytAccessToken,
+        'Content-Type': 'application/json',
+        'X-Upload-Content-Type': file.type,
+        'X-Upload-Content-Length': file.size,
+      },
+      body: JSON.stringify({
+        snippet: {
+          title: meta.title,
+          description: meta.description,
+          tags: meta.tags,
+          categoryId: meta.categoryId,
+        },
+        status: {
+          privacyStatus: meta.privacyStatus,
+          madeForKids: meta.madeForKids,
+        }
+      })
+    }
+  );
+
+  if (!initRes.ok) {
+    const err = await initRes.json();
+    throw new Error(err.error?.message || 'Failed to initiate upload');
+  }
+
+  const uploadUrl = initRes.headers.get('Location');
+  if (!uploadUrl) throw new Error('No upload URL returned from YouTube');
+
+  // Step 2: Upload file in chunks
+  const CHUNK = 5 * 1024 * 1024; // 5MB chunks
+  let offset = 0;
+
+  while (offset < file.size) {
+    const end = Math.min(offset + CHUNK, file.size);
+    const chunk = file.slice(offset, end);
+
+    const res = await fetch(uploadUrl, {
+      method: 'PUT',
+      headers: {
+        'Content-Range': `bytes ${offset}-${end-1}/${file.size}`,
+        'Content-Type': file.type,
+      },
+      body: chunk,
+    });
+
+    if (res.status === 308) {
+      // Incomplete — continue
+      const range = res.headers.get('Range');
+      offset = range ? parseInt(range.split('-')[1]) + 1 : end;
+      onProgress(offset / file.size);
+    } else if (res.status === 200 || res.status === 201) {
+      const data = await res.json();
+      onProgress(1);
+      return data.id;
+    } else {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error?.message || `Upload chunk failed (${res.status})`);
+    }
+  }
+  throw new Error('Upload ended without video ID');
+}
+
+async function uploadThumbnailToYT(videoId, thumbFile) {
+  const reader = new FileReader();
+  const thumbData = await new Promise((res, rej) => {
+    reader.onload = () => res(reader.result);
+    reader.onerror = rej;
+    reader.readAsArrayBuffer(thumbFile);
+  });
+
+  const res = await fetch(
+    `https://www.googleapis.com/upload/youtube/v3/thumbnails/set?videoId=${videoId}&uploadType=media`,
+    {
+      method: 'POST',
+      headers: {
+        'Authorization': 'Bearer ' + ytAccessToken,
+        'Content-Type': thumbFile.type,
+      },
+      body: thumbData,
+    }
+  );
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    console.warn('Thumbnail upload failed:', err.error?.message);
+    // Non-fatal — video still uploaded
+  }
+}
+
+// ── POPULATE YOUTUBE METADATA ──────────────────────────────────────────────
 function populateYTSelect() {
   const sel = document.getElementById('yt-story-select');
   sel.innerHTML = '<option value="">-- Choose a story --</option>' +
@@ -1350,9 +1712,9 @@ function populateYouTube() {
 
 ✨ Welcome to a magical bedtime story for children!
 
-${s['Story Text']}
+${s['Story Text'] || ''}
 
-🎯 Today's Lesson: ${s.Moral}
+🎯 Today's Lesson: ${s.Moral || ''}
 
 ─────────────────────────
 📌 SUBSCRIBE for new stories every week!
@@ -1363,6 +1725,19 @@ ${s['Story Text']}
 
   document.getElementById('yt-tags').value =
     `kids story, bedtime story, children animation, ${(s.Theme||'').toLowerCase()} story, moral story, educational video for kids, animated story, ${(s.Title||'').toLowerCase()}, storytime, kids cartoon`;
+}
+
+// Auto-trigger: watch status changes
+function checkAutoTrigger(story) {
+  if (document.getElementById('yt-auto-trigger')?.checked && story.Status === 'Uploaded') {
+    switchTab('youtube');
+    const idx = allStories.findIndex(s => s.Title === story.Title);
+    if (idx >= 0) {
+      document.getElementById('yt-story-select').value = idx;
+      populateYouTube();
+      notify('⚡ Auto-trigger: Story ready to upload to YouTube!');
+    }
+  }
 }
 
 function copyField(id, label) {
