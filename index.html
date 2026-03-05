@@ -1021,21 +1021,48 @@
 
   <!-- ══════════ UPLOAD PAGE ══════════ -->
   <div class="page" id="page-upload">
+
+    <!-- Auth warning if not signed in -->
+    <div id="upload-auth-warn" style="max-width:900px;margin-bottom:16px;padding:14px 20px;background:rgba(255,136,0,0.07);border:1px solid rgba(255,136,0,0.3);font-family:'Share Tech Mono',monospace;font-size:12px;color:var(--orange);display:none">
+      ⚠ Sign in to YouTube first (YouTube tab) — uploads use your Google account to save files to Drive
+    </div>
+
+    <!-- Story selector — links upload to correct story -->
+    <div class="panel" style="max-width:900px;margin-bottom:16px">
+      <div class="panel-title">① Link to Story</div>
+      <div style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap">
+        <div class="form-group" style="flex:1;min-width:200px">
+          <label>Which story are these files for?</label>
+          <select id="upload-story-select" onchange="onUploadStorySelect()">
+            <option value="">-- Select story first --</option>
+          </select>
+        </div>
+        <div id="upload-story-info" style="font-family:'Share Tech Mono',monospace;font-size:11px;color:var(--text-dim);padding-bottom:10px;display:none">
+          Row: <span id="upload-story-row" style="color:var(--accent)">—</span> &nbsp;|&nbsp;
+          Status: <span id="upload-story-status" style="color:var(--accent2)">—</span>
+        </div>
+      </div>
+    </div>
+
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;max-width:900px">
 
       <!-- Thumbnail Upload -->
       <div class="panel">
-        <div class="panel-title">Thumbnail Upload</div>
+        <div class="panel-title">② Thumbnail → Drive</div>
         <div class="upload-zone" id="thumb-zone">
           <input type="file" accept="image/*" onchange="handleThumb(this)">
           <span class="upload-icon">🖼️</span>
           <div class="upload-label">DROP IMAGE OR CLICK<br>PNG / JPG / WEBP</div>
           <div class="upload-filename" id="thumb-name"></div>
         </div>
+        <div id="thumb-preview-wrap" style="display:none;margin-top:10px">
+          <img id="thumb-preview" style="width:100%;border:1px solid var(--border)">
+        </div>
         <div class="upload-progress-wrap" id="thumb-progress">
           <div class="upload-stage"><div class="stage-indicator" id="ts1"></div>Reading file</div>
-          <div class="upload-stage"><div class="stage-indicator" id="ts2"></div>Uploading to Drive</div>
-          <div class="upload-stage"><div class="stage-indicator" id="ts3"></div>Getting public URL</div>
+          <div class="upload-stage"><div class="stage-indicator" id="ts2"></div>Uploading to Google Drive</div>
+          <div class="upload-stage"><div class="stage-indicator" id="ts3"></div>Making public & getting URL</div>
+          <div class="upload-stage"><div class="stage-indicator" id="ts4"></div>Saving URL to Sheet</div>
           <div class="big-progress"><div class="big-progress-fill" id="thumb-bar"></div></div>
         </div>
         <div class="upload-result" id="thumb-url"></div>
@@ -1046,18 +1073,21 @@
 
       <!-- Video Upload -->
       <div class="panel">
-        <div class="panel-title">Video Upload</div>
+        <div class="panel-title">③ Video → Drive</div>
         <div class="upload-zone" id="video-zone">
           <input type="file" accept="video/*" onchange="handleVideo(this)">
           <span class="upload-icon">🎬</span>
           <div class="upload-label">DROP VIDEO OR CLICK<br>MP4 / MOV / AVI</div>
           <div class="upload-filename" id="video-name"></div>
         </div>
+        <div id="video-size-info" style="margin-top:8px;font-family:'Share Tech Mono',monospace;font-size:10px;color:var(--text-dim)"></div>
         <div class="upload-progress-wrap" id="video-progress">
           <div class="upload-stage"><div class="stage-indicator" id="vs1"></div>Reading file</div>
-          <div class="upload-stage"><div class="stage-indicator" id="vs2"></div>Uploading to Drive</div>
-          <div class="upload-stage"><div class="stage-indicator" id="vs3"></div>Getting public URL</div>
+          <div class="upload-stage"><div class="stage-indicator" id="vs2"></div>Uploading to Google Drive</div>
+          <div class="upload-stage"><div class="stage-indicator" id="vs3"></div>Making public & getting URL</div>
+          <div class="upload-stage"><div class="stage-indicator" id="vs4"></div>Saving URL to Sheet</div>
           <div class="big-progress"><div class="big-progress-fill" id="video-bar"></div></div>
+          <div style="font-family:'Share Tech Mono',monospace;font-size:10px;color:var(--text-dim);margin-top:6px" id="video-upload-pct"></div>
         </div>
         <div class="upload-result" id="video-url"></div>
         <div style="margin-top:12px">
@@ -1067,13 +1097,14 @@
     </div>
 
     <div class="panel" style="max-width:900px;margin-top:16px">
-      <div class="panel-title">Upload Instructions</div>
-      <div style="font-family:'Share Tech Mono',monospace;font-size:12px;line-height:2;color:var(--text-dim)">
-        <p>① Paste your Google Drive folder ID in <strong style="color:var(--accent2)">Settings</strong></p>
-        <p>② Files upload directly to your Drive folder via Apps Script</p>
-        <p>③ Public URLs are automatically generated</p>
-        <p>④ URLs are saved back to your Main sheet row</p>
-        <p style="color:var(--orange);margin-top:8px">⚠ Max file size: 5GB for video, 5MB for thumbnail</p>
+      <div class="panel-title">How This Works</div>
+      <div style="font-family:'Share Tech Mono',monospace;font-size:12px;line-height:2.2;color:var(--text-dim)">
+        <div>① Select which story these files belong to</div>
+        <div>② Upload thumbnail → saved to your Google Drive folder → URL saved to Sheet column K</div>
+        <div>③ Upload video → saved to your Google Drive folder → URL saved to Sheet column L</div>
+        <div>④ Go to YouTube tab → select same story → files are ready to post</div>
+        <div style="color:var(--orange);margin-top:8px">⚠ Must be signed in via YouTube tab for uploads to work</div>
+        <div style="color:var(--accent);margin-top:4px">✓ Uses your Google Drive API — real URLs, no CORS issues</div>
       </div>
     </div>
   </div>
@@ -1214,6 +1245,7 @@ function renderAll() {
   renderStoryTable(allStories);
   populateFilters();
   populateYTSelect();
+  populateUploadSelect();
   document.getElementById('story-count-header').textContent = `${allStories.length} STORIES`;
 }
 
@@ -1418,7 +1450,7 @@ async function submitStory() {
 
 // ── YOUTUBE OAUTH ──────────────────────────────────────────────
 const YT_CLIENT_ID = '165516915479-27ks2km5q9sbod00uvsdmda3vfgf0toa.apps.googleusercontent.com';
-const YT_SCOPES = 'https://www.googleapis.com/auth/youtube.upload https://www.googleapis.com/auth/youtube https://www.googleapis.com/auth/userinfo.email';
+const YT_SCOPES = 'https://www.googleapis.com/auth/youtube.upload https://www.googleapis.com/auth/youtube https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/drive.file';
 
 let ytTokenClient = null;
 let ytAccessToken = null;
@@ -1751,86 +1783,236 @@ function copyAllYT() {
   notify('📋 All YouTube metadata copied!');
 }
 
-// ── UPLOAD (mock with progress) ──────────────────────────────────────────────
+// ── UPLOAD — Real Google Drive API ──────────────────────────────────────────────
 let thumbFile = null, videoFile = null;
+let uploadStoryIndex = null;
+
+function populateUploadSelect() {
+  const sel = document.getElementById('upload-story-select');
+  if (!sel) return;
+  sel.innerHTML = '<option value="">-- Select story first --</option>' +
+    allStories.map((s, i) => `<option value="${i}">${s.Title || 'Story ' + (i+1)}</option>`).join('');
+}
+
+function onUploadStorySelect() {
+  const i = document.getElementById('upload-story-select').value;
+  uploadStoryIndex = i === '' ? null : parseInt(i);
+  const infoEl = document.getElementById('upload-story-info');
+  if (uploadStoryIndex !== null) {
+    const s = allStories[uploadStoryIndex];
+    document.getElementById('upload-story-row').textContent = uploadStoryIndex + 2; // sheet row
+    document.getElementById('upload-story-status').textContent = s.Status || '—';
+    infoEl.style.display = 'block';
+  } else {
+    infoEl.style.display = 'none';
+  }
+}
 
 function handleThumb(input) {
   thumbFile = input.files[0];
-  if (thumbFile) document.getElementById('thumb-name').textContent = '📎 ' + thumbFile.name;
+  if (!thumbFile) return;
+  document.getElementById('thumb-name').textContent = '📎 ' + thumbFile.name;
+  // Show preview
+  const reader = new FileReader();
+  reader.onload = e => {
+    document.getElementById('thumb-preview').src = e.target.result;
+    document.getElementById('thumb-preview-wrap').style.display = 'block';
+  };
+  reader.readAsDataURL(thumbFile);
 }
 
 function handleVideo(input) {
   videoFile = input.files[0];
-  if (videoFile) document.getElementById('video-name').textContent = '📎 ' + videoFile.name;
+  if (!videoFile) return;
+  document.getElementById('video-name').textContent = '📎 ' + videoFile.name;
+  document.getElementById('video-size-info').textContent = '📦 Size: ' + formatBytes(videoFile.size);
 }
 
 async function uploadThumbnail() {
-  if (!thumbFile) { notify('⚠ Select an image first'); return; }
-  await runUpload('thumb', thumbFile, 'thumb-progress', 'thumb-bar', ['ts1','ts2','ts3'], 'thumb-url');
+  if (!thumbFile) { notify('⚠ Select a thumbnail image first'); return; }
+  if (uploadStoryIndex === null) { notify('⚠ Select which story this belongs to'); return; }
+  if (!ytAccessToken) { notify('⚠ Sign in via YouTube tab first'); switchTab('youtube'); return; }
+
+  await runDriveUpload(
+    thumbFile, 'thumb',
+    ['ts1','ts2','ts3','ts4'], 'thumb-bar', 'thumb-progress', 'thumb-url',
+    'thumbnailUrl', uploadStoryIndex
+  );
 }
 
 async function uploadVideo() {
-  if (!videoFile) { notify('⚠ Select a video first'); return; }
-  await runUpload('video', videoFile, 'video-progress', 'video-bar', ['vs1','vs2','vs3'], 'video-url');
+  if (!videoFile) { notify('⚠ Select a video file first'); return; }
+  if (uploadStoryIndex === null) { notify('⚠ Select which story this belongs to'); return; }
+  if (!ytAccessToken) { notify('⚠ Sign in via YouTube tab first'); switchTab('youtube'); return; }
+
+  await runDriveUpload(
+    videoFile, 'video',
+    ['vs1','vs2','vs3','vs4'], 'video-bar', 'video-progress', 'video-url',
+    'videoUrl', uploadStoryIndex
+  );
 }
 
-async function runUpload(type, file, progressId, barId, stages, resultId) {
+async function runDriveUpload(file, type, stages, barId, progressId, resultId, urlField, storyIdx) {
   const progWrap = document.getElementById(progressId);
   const bar = document.getElementById(barId);
   const resultEl = document.getElementById(resultId);
+
   progWrap.classList.add('visible');
   resultEl.classList.remove('visible');
+  stages.forEach(id => document.getElementById(id).className = 'stage-indicator');
 
-  // Stage 1: Read
-  document.getElementById(stages[0]).classList.add('active');
-  bar.style.width = '10%';
-  await delay(600);
-  document.getElementById(stages[0]).classList.replace('active','done');
-  bar.style.width = '33%';
+  const setStage = (n, state) => document.getElementById(stages[n]).className = 'stage-indicator ' + state;
+  const setBar = pct => { bar.style.width = pct + '%'; };
 
-  // Stage 2: Upload to Drive
-  document.getElementById(stages[1]).classList.add('active');
-  bar.style.width = '50%';
+  try {
+    // Stage 1: Read file
+    setStage(0, 'active'); setBar(5);
+    await delay(300);
+    setStage(0, 'done'); setBar(15);
 
-  const url = cfg.url;
-  let driveUrl = null;
+    // Stage 2: Upload to Google Drive via multipart
+    setStage(1, 'active'); setBar(20);
 
-  if (url && cfg.folder) {
-    try {
-      // Real Drive upload via Apps Script
-      const b64 = await fileToBase64(file);
-      const res = await fetch(url, {
-        method: 'POST',
-        body: JSON.stringify({ action: 'uploadFile', name: file.name, mimeType: file.type, data: b64, folderId: cfg.folder })
+    const folderId = cfg.folder;
+    const metadata = { name: file.name, mimeType: file.type, parents: folderId ? [folderId] : [] };
+
+    // Use resumable upload for large files, multipart for small
+    let fileId;
+    if (file.size > 5 * 1024 * 1024) {
+      // Resumable upload
+      fileId = await driveResumableUpload(file, metadata, (pct) => {
+        setBar(20 + Math.round(pct * 55));
+        if (type === 'video') {
+          const pctEl = document.getElementById('video-upload-pct');
+          if (pctEl) pctEl.textContent = Math.round(pct * 100) + '% uploaded';
+        }
       });
-      const json = await res.json();
-      driveUrl = json.url || null;
-    } catch(e) {}
+    } else {
+      // Multipart upload for small files
+      fileId = await driveMultipartUpload(file, metadata);
+    }
+
+    setStage(1, 'done'); setBar(78);
+
+    // Stage 3: Make public
+    setStage(2, 'active');
+    await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}/permissions`, {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + ytAccessToken, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ role: 'reader', type: 'anyone' })
+    });
+    const driveUrl = `https://drive.google.com/file/d/${fileId}/view`;
+    setStage(2, 'done'); setBar(88);
+
+    // Stage 4: Save URL back to Google Sheet
+    setStage(3, 'active');
+    if (cfg.url && storyIdx !== null) {
+      try {
+        await fetch(cfg.url, {
+          method: 'POST',
+          body: JSON.stringify({
+            action: 'saveFileUrl',
+            storyTitle: allStories[storyIdx].Title,
+            urlField,
+            url: driveUrl,
+            storyRow: storyIdx + 2
+          })
+        });
+        // Update local data
+        allStories[storyIdx][urlField === 'thumbnailUrl' ? 'Drive Thumbnail URL' : 'Drive Video URL'] = driveUrl;
+      } catch(e) { console.warn('Sheet save failed:', e); }
+    }
+    setStage(3, 'done'); setBar(100);
+
+    // Show result
+    resultEl.innerHTML = `✓ ${type === 'thumb' ? 'Thumbnail' : 'Video'} saved to Drive:<br>
+      <a href="${driveUrl}" target="_blank" style="color:var(--accent2);word-break:break-all">${driveUrl}</a>`;
+    resultEl.classList.add('visible');
+    notify(`✅ ${type === 'thumb' ? 'Thumbnail' : 'Video'} uploaded for "${allStories[storyIdx]?.Title}"!`);
+
+  } catch(err) {
+    setBar(0);
+    resultEl.innerHTML = `<span style="color:var(--accent3)">⚠ Upload failed: ${err.message}</span>`;
+    resultEl.classList.add('visible');
+    notify('⚠ Upload failed — ' + err.message);
   }
-
-  await delay(800);
-  document.getElementById(stages[1]).classList.replace('active','done');
-  bar.style.width = '80%';
-
-  // Stage 3: URL
-  document.getElementById(stages[2]).classList.add('active');
-  await delay(500);
-  document.getElementById(stages[2]).classList.replace('active','done');
-  bar.style.width = '100%';
-
-  const finalUrl = driveUrl || `https://drive.google.com/file/d/DEMO_${Date.now()}/view (connect Apps Script for real URLs)`;
-  resultEl.innerHTML = `✓ ${type === 'thumb' ? 'Thumbnail' : 'Video'} URL:<br><a href="${finalUrl}" target="_blank" style="color:var(--accent2)">${finalUrl}</a>`;
-  resultEl.classList.add('visible');
-  notify(`✅ ${type === 'thumb' ? 'Thumbnail' : 'Video'} uploaded!`);
 }
 
-function fileToBase64(file) {
-  return new Promise((res, rej) => {
-    const r = new FileReader();
-    r.onload = () => res(r.result.split(',')[1]);
-    r.onerror = rej;
-    r.readAsDataURL(file);
+async function driveMultipartUpload(file, metadata) {
+  const boundary = 'storyforge_boundary';
+  const metaPart = JSON.stringify(metadata);
+  const fileData = await file.arrayBuffer();
+
+  const body = new Uint8Array([
+    ...new TextEncoder().encode(`--${boundary}\r\nContent-Type: application/json\r\n\r\n${metaPart}\r\n--${boundary}\r\nContent-Type: ${file.type}\r\n\r\n`),
+    ...new Uint8Array(fileData),
+    ...new TextEncoder().encode(`\r\n--${boundary}--`)
+  ]);
+
+  const res = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', {
+    method: 'POST',
+    headers: {
+      'Authorization': 'Bearer ' + ytAccessToken,
+      'Content-Type': `multipart/related; boundary=${boundary}`,
+    },
+    body
   });
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error?.message || 'Drive upload failed (' + res.status + ')');
+  }
+  const data = await res.json();
+  return data.id;
+}
+
+async function driveResumableUpload(file, metadata, onProgress) {
+  // Init resumable session
+  const initRes = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable', {
+    method: 'POST',
+    headers: {
+      'Authorization': 'Bearer ' + ytAccessToken,
+      'Content-Type': 'application/json',
+      'X-Upload-Content-Type': file.type,
+      'X-Upload-Content-Length': file.size,
+    },
+    body: JSON.stringify(metadata)
+  });
+
+  if (!initRes.ok) throw new Error('Failed to start Drive upload session');
+  const uploadUrl = initRes.headers.get('Location');
+
+  // Upload in chunks
+  const CHUNK = 5 * 1024 * 1024;
+  let offset = 0;
+
+  while (offset < file.size) {
+    const end = Math.min(offset + CHUNK, file.size);
+    const chunk = file.slice(offset, end);
+
+    const res = await fetch(uploadUrl, {
+      method: 'PUT',
+      headers: {
+        'Content-Range': `bytes ${offset}-${end-1}/${file.size}`,
+        'Content-Type': file.type,
+      },
+      body: chunk
+    });
+
+    if (res.status === 308) {
+      const range = res.headers.get('Range');
+      offset = range ? parseInt(range.split('-')[1]) + 1 : end;
+      onProgress(offset / file.size);
+    } else if (res.status === 200 || res.status === 201) {
+      const data = await res.json();
+      onProgress(1);
+      return data.id;
+    } else {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error?.message || `Upload failed (${res.status})`);
+    }
+  }
+  throw new Error('Upload ended without file ID');
 }
 
 function delay(ms) { return new Promise(r => setTimeout(r, ms)); }
