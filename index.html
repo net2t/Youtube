@@ -3,1236 +3,697 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>STORYFORGE — Content Control System</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
+<title>Bright Little Stories — Content System</title>
+<link rel="icon" type="image/png" href="https://yt3.ggpht.com/t1dklM-gbcPmlsLqDAOYg_xhiz7wBUkf6-HQgtRhKOnNiiZqd-tiwqvj3xa9CkQpTD_lWbLX4A=s48-c-k-c0x00ffffff-no-rj">
 <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Orbitron:wght@400;700;900&family=Rajdhani:wght@300;400;600&display=swap" rel="stylesheet">
 <script src="https://accounts.google.com/gsi/client" async></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
 <style>
-  :root {
-    --bg: #050505;
-    --bg2: #0a0a0a;
-    --bg3: #0f0f0f;
-    --panel: #111111;
-    --border: #1a1a1a;
-    --accent: #00ff88;
-    --accent2: #00ccff;
-    --accent3: #ff0055;
-    --purple: #aa44ff;
-    --orange: #ff8800;
-    --text: #c8c8c8;
-    --text-dim: #555;
-    --glow: 0 0 20px rgba(0,255,136,0.3);
-    --glow2: 0 0 20px rgba(0,204,255,0.3);
-  }
-
-  * { margin: 0; padding: 0; box-sizing: border-box; }
-
-  body {
-    background: var(--bg);
-    color: var(--text);
-    font-family: 'Rajdhani', sans-serif;
-    font-size: 15px;
-    min-height: 100vh;
-    overflow-x: hidden;
-  }
-
-  /* Scanline overlay */
-  body::before {
-    content: '';
-    position: fixed;
-    inset: 0;
-    background: repeating-linear-gradient(
-      0deg, transparent, transparent 2px,
-      rgba(0,255,136,0.015) 2px, rgba(0,255,136,0.015) 4px
-    );
-    pointer-events: none;
-    z-index: 9999;
-  }
-
-  /* Grid bg */
-  body::after {
-    content: '';
-    position: fixed;
-    inset: 0;
-    background-image:
-      linear-gradient(rgba(0,255,136,0.03) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(0,255,136,0.03) 1px, transparent 1px);
-    background-size: 40px 40px;
-    pointer-events: none;
-    z-index: 0;
-  }
-
-  /* ── HEADER ── */
-  .header {
-    position: sticky; top: 0; z-index: 100;
-    background: rgba(5,5,5,0.95);
-    border-bottom: 1px solid var(--accent);
-    padding: 0 24px;
-    display: flex; align-items: center; justify-content: space-between;
-    height: 56px;
-    backdrop-filter: blur(10px);
-    box-shadow: 0 0 30px rgba(0,255,136,0.1);
-  }
-
-  .logo {
-    font-family: 'Orbitron', monospace;
-    font-size: 18px;
-    font-weight: 900;
-    color: var(--accent);
-    letter-spacing: 4px;
-    text-shadow: var(--glow);
-  }
-
-  .logo span { color: var(--accent2); }
-
-  .header-status {
-    font-family: 'Share Tech Mono', monospace;
-    font-size: 11px;
-    color: var(--text-dim);
-    display: flex; gap: 20px; align-items: center;
-  }
-
-  .status-dot {
-    width: 8px; height: 8px; border-radius: 50%;
-    background: var(--accent);
-    box-shadow: 0 0 8px var(--accent);
-    animation: pulse 2s infinite;
-    display: inline-block; margin-right: 6px;
-  }
-
-  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
-
-  /* ── TABS ── */
-  .tabs {
-    display: flex; gap: 0;
-    background: var(--bg2);
-    border-bottom: 1px solid var(--border);
-    padding: 0 24px;
-    position: sticky; top: 56px; z-index: 99;
-  }
-
-  .tab {
-    font-family: 'Orbitron', monospace;
-    font-size: 10px;
-    letter-spacing: 2px;
-    padding: 14px 22px;
-    cursor: pointer;
-    border: none;
-    background: none;
-    color: var(--text-dim);
-    border-bottom: 2px solid transparent;
-    transition: all 0.2s;
-    text-transform: uppercase;
-  }
-
-  .tab:hover { color: var(--accent); }
-  .tab.active {
-    color: var(--accent);
-    border-bottom-color: var(--accent);
-    background: rgba(0,255,136,0.05);
-    text-shadow: var(--glow);
-  }
-
-  /* ── LAYOUT ── */
-  .main { padding: 24px; max-width: 1400px; margin: 0 auto; position: relative; z-index: 1; }
-
-  .page { display: none; }
-  .page.active { display: block; animation: fadeIn 0.3s ease; }
-  @keyframes fadeIn { from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:none} }
-
-  /* ── CARDS ── */
-  .panel {
-    background: var(--panel);
-    border: 1px solid var(--border);
-    border-radius: 2px;
-    padding: 20px;
-    position: relative;
-    overflow: hidden;
-  }
-
-  .panel::before {
-    content: '';
-    position: absolute;
-    top: 0; left: 0; right: 0; height: 1px;
-    background: linear-gradient(90deg, transparent, var(--accent), transparent);
-    opacity: 0.5;
-  }
-
-  .panel-title {
-    font-family: 'Orbitron', monospace;
-    font-size: 10px;
-    letter-spacing: 3px;
-    color: var(--text-dim);
-    text-transform: uppercase;
-    margin-bottom: 16px;
-    display: flex; align-items: center; gap: 8px;
-  }
-
-  .panel-title::after {
-    content: '';
-    flex: 1;
-    height: 1px;
-    background: var(--border);
-  }
-
-  /* ── KPI GRID ── */
-  .kpi-grid {
-    display: grid;
-    grid-template-columns: repeat(4, 1fr);
-    gap: 12px;
-    margin-bottom: 24px;
-  }
-
-  .kpi-card {
-    background: var(--panel);
-    border: 1px solid var(--border);
-    padding: 20px;
-    position: relative;
-    overflow: hidden;
-    transition: border-color 0.3s;
-  }
-
-  .kpi-card:hover { border-color: var(--accent); box-shadow: var(--glow); }
-
-  .kpi-label {
-    font-family: 'Share Tech Mono', monospace;
-    font-size: 10px;
-    color: var(--text-dim);
-    letter-spacing: 2px;
-    text-transform: uppercase;
-    margin-bottom: 8px;
-  }
-
-  .kpi-value {
-    font-family: 'Orbitron', monospace;
-    font-size: 36px;
-    font-weight: 900;
-    line-height: 1;
-    margin-bottom: 4px;
-  }
-
-  .kpi-sub {
-    font-size: 11px;
-    color: var(--text-dim);
-  }
-
-  .kpi-card:nth-child(1) .kpi-value { color: var(--accent); text-shadow: var(--glow); }
-  .kpi-card:nth-child(2) .kpi-value { color: var(--accent2); text-shadow: var(--glow2); }
-  .kpi-card:nth-child(3) .kpi-value { color: var(--purple); text-shadow: 0 0 20px rgba(170,68,255,0.4); }
-  .kpi-card:nth-child(4) .kpi-value { color: var(--orange); text-shadow: 0 0 20px rgba(255,136,0,0.4); }
-
-  /* ── DASH GRID ── */
-  .dash-grid {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 16px;
-    margin-bottom: 24px;
-  }
-
-  /* ── PROGRESS BARS ── */
-  .progress-item {
-    margin-bottom: 14px;
-  }
-
-  .progress-header {
-    display: flex; justify-content: space-between; align-items: center;
-    margin-bottom: 6px;
-  }
-
-  .progress-label {
-    font-family: 'Share Tech Mono', monospace;
-    font-size: 11px;
-    color: var(--text);
-  }
-
-  .progress-count {
-    font-family: 'Orbitron', monospace;
-    font-size: 12px;
-    color: var(--accent);
-  }
-
-  .progress-bar {
-    height: 6px;
-    background: var(--bg);
-    border: 1px solid var(--border);
-    border-radius: 0;
-    overflow: hidden;
-  }
-
-  .progress-fill {
-    height: 100%;
-    border-radius: 0;
-    transition: width 1s cubic-bezier(0.4,0,0.2,1);
-    position: relative;
-  }
-
-  .progress-fill::after {
-    content: '';
-    position: absolute;
-    right: 0; top: 0; bottom: 0; width: 4px;
-    background: rgba(255,255,255,0.6);
-    filter: blur(2px);
-  }
-
-  /* ── STORY TABLE ── */
-  .table-wrap { overflow-x: auto; }
-
-  table {
-    width: 100%;
-    border-collapse: collapse;
-    font-size: 13px;
-  }
-
-  th {
-    font-family: 'Orbitron', monospace;
-    font-size: 9px;
-    letter-spacing: 2px;
-    color: var(--text-dim);
-    text-align: left;
-    padding: 10px 12px;
-    border-bottom: 1px solid var(--border);
-    white-space: nowrap;
-    background: var(--bg2);
-  }
-
-  td {
-    padding: 12px 12px;
-    border-bottom: 1px solid rgba(255,255,255,0.04);
-    vertical-align: top;
-    max-width: 280px;
-  }
-
-  tr:hover td { background: rgba(0,255,136,0.03); }
-
-  .story-title {
-    font-weight: 600;
-    color: #fff;
-    font-size: 14px;
-    margin-bottom: 2px;
-  }
-
-  .story-text-preview {
-    color: var(--text-dim);
-    font-size: 12px;
-    line-height: 1.4;
-    overflow: hidden;
-    display: -webkit-box;
-    -webkit-line-clamp: 2;
-    -webkit-box-orient: vertical;
-  }
-
-  .badge {
-    display: inline-block;
-    padding: 3px 10px;
-    font-family: 'Share Tech Mono', monospace;
-    font-size: 10px;
-    letter-spacing: 1px;
-    border-radius: 2px;
-    text-transform: uppercase;
-  }
-
-  .badge-generated    { background: rgba(0,255,136,0.1); color: var(--accent); border: 1px solid rgba(0,255,136,0.2); }
-  .badge-storyboarded { background: rgba(0,170,255,0.1); color: var(--accent2); border: 1px solid rgba(0,170,255,0.2); }
-  .badge-recorded     { background: rgba(255,136,0,0.1); color: var(--orange); border: 1px solid rgba(255,136,0,0.2); }
-  .badge-uploaded     { background: rgba(170,68,255,0.1); color: var(--purple); border: 1px solid rgba(170,68,255,0.2); }
-  .badge-published    { background: rgba(136,255,0,0.1); color: #88ff00; border: 1px solid rgba(136,255,0,0.2); }
-
-  .theme-tag {
-    display: inline-block;
-    padding: 2px 8px;
-    background: rgba(0,204,255,0.08);
-    color: var(--accent2);
-    border: 1px solid rgba(0,204,255,0.15);
-    font-size: 11px;
-    font-family: 'Share Tech Mono', monospace;
-  }
-
-  /* Action buttons */
-  .btn-copy {
-    background: none;
-    border: 1px solid var(--border);
-    color: var(--text-dim);
-    padding: 4px 10px;
-    font-size: 10px;
-    font-family: 'Share Tech Mono', monospace;
-    cursor: pointer;
-    transition: all 0.2s;
-    letter-spacing: 1px;
-  }
-
-  .btn-copy:hover {
-    border-color: var(--accent);
-    color: var(--accent);
-    box-shadow: var(--glow);
-  }
-
-  .btn-copy.copied {
-    border-color: var(--accent);
-    color: var(--accent);
-    background: rgba(0,255,136,0.1);
-  }
-
-  /* ── FORM STYLES ── */
-  .form-grid {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 16px;
-    margin-bottom: 16px;
-  }
-
-  .form-group { display: flex; flex-direction: column; gap: 6px; }
-  .form-group.full { grid-column: 1 / -1; }
-
-  label {
-    font-family: 'Share Tech Mono', monospace;
-    font-size: 10px;
-    color: var(--text-dim);
-    letter-spacing: 2px;
-    text-transform: uppercase;
-  }
-
-  input, textarea, select {
-    background: var(--bg);
-    border: 1px solid var(--border);
-    color: var(--text);
-    padding: 10px 12px;
-    font-family: 'Rajdhani', sans-serif;
-    font-size: 14px;
-    outline: none;
-    transition: border-color 0.2s, box-shadow 0.2s;
-    border-radius: 0;
-    width: 100%;
-  }
-
-  input:focus, textarea:focus, select:focus {
-    border-color: var(--accent);
-    box-shadow: 0 0 0 1px rgba(0,255,136,0.2);
-  }
-
-  select option { background: var(--bg2); }
-
-  textarea { min-height: 120px; resize: vertical; line-height: 1.5; }
-
-  .char-count {
-    font-family: 'Share Tech Mono', monospace;
-    font-size: 10px;
-    color: var(--text-dim);
-    text-align: right;
-  }
-
-  .btn-primary {
-    background: var(--accent);
-    color: #000;
-    border: none;
-    padding: 12px 32px;
-    font-family: 'Orbitron', monospace;
-    font-size: 11px;
-    font-weight: 700;
-    letter-spacing: 3px;
-    cursor: pointer;
-    transition: all 0.2s;
-    text-transform: uppercase;
-  }
-
-  .btn-primary:hover {
-    background: #00ddaa;
-    box-shadow: var(--glow);
-    transform: translateY(-1px);
-  }
-
-  .btn-secondary {
-    background: none;
-    color: var(--accent2);
-    border: 1px solid var(--accent2);
-    padding: 12px 24px;
-    font-family: 'Orbitron', monospace;
-    font-size: 10px;
-    letter-spacing: 2px;
-    cursor: pointer;
-    transition: all 0.2s;
-  }
-
-  .btn-secondary:hover {
-    background: rgba(0,204,255,0.1);
-    box-shadow: var(--glow2);
-  }
-
-  /* ── UPLOAD ZONE ── */
-  .upload-zone {
-    border: 1px dashed var(--border);
-    padding: 30px;
-    text-align: center;
-    cursor: pointer;
-    transition: all 0.2s;
-    position: relative;
-  }
-
-  .upload-zone:hover, .upload-zone.drag-over {
-    border-color: var(--accent);
-    background: rgba(0,255,136,0.03);
-  }
-
-  .upload-zone input[type="file"] {
-    position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%;
-  }
-
-  .upload-icon {
-    font-size: 32px;
-    margin-bottom: 8px;
-    display: block;
-  }
-
-  .upload-label {
-    font-family: 'Share Tech Mono', monospace;
-    font-size: 11px;
-    color: var(--text-dim);
-    letter-spacing: 1px;
-  }
-
-  .upload-filename {
-    margin-top: 8px;
-    font-size: 12px;
-    color: var(--accent);
-    font-family: 'Share Tech Mono', monospace;
-  }
-
-  /* ── UPLOAD PROGRESS ── */
-  .upload-progress-wrap {
-    margin-top: 16px;
-    display: none;
-  }
-
-  .upload-progress-wrap.visible { display: block; }
-
-  .upload-stage {
-    display: flex; align-items: center; gap: 10px;
-    margin-bottom: 8px;
-    font-family: 'Share Tech Mono', monospace;
-    font-size: 11px;
-  }
-
-  .stage-indicator {
-    width: 10px; height: 10px; border-radius: 50%;
-    background: var(--border); flex-shrink: 0;
-    transition: background 0.3s, box-shadow 0.3s;
-  }
-
-  .stage-indicator.active { background: var(--orange); box-shadow: 0 0 8px var(--orange); animation: pulse 1s infinite; }
-  .stage-indicator.done { background: var(--accent); box-shadow: 0 0 8px var(--accent); animation: none; }
-
-  .big-progress {
-    height: 4px;
-    background: var(--bg);
-    border: 1px solid var(--border);
-    margin-top: 16px;
-    overflow: hidden;
-  }
-
-  .big-progress-fill {
-    height: 100%;
-    background: linear-gradient(90deg, var(--accent), var(--accent2));
-    width: 0%;
-    transition: width 0.5s ease;
-    box-shadow: 0 0 10px var(--accent);
-  }
-
-  .upload-result {
-    margin-top: 12px;
-    padding: 12px;
-    background: rgba(0,255,136,0.05);
-    border: 1px solid rgba(0,255,136,0.2);
-    font-family: 'Share Tech Mono', monospace;
-    font-size: 11px;
-    color: var(--accent);
-    display: none;
-    word-break: break-all;
-  }
-
-  .upload-result.visible { display: block; }
-
-  /* ── PIPELINE ── */
-  .pipeline {
-    display: flex;
-    align-items: stretch;
-    gap: 0;
-    margin-bottom: 24px;
-  }
-
-  .pipeline-step {
-    flex: 1;
-    padding: 16px;
-    background: var(--panel);
-    border: 1px solid var(--border);
-    text-align: center;
-    position: relative;
-  }
-
-  .pipeline-step::after {
-    content: '▶';
-    position: absolute;
-    right: -10px;
-    top: 50%;
-    transform: translateY(-50%);
-    color: var(--border);
-    font-size: 14px;
-    z-index: 2;
-  }
-
-  .pipeline-step:last-child::after { display: none; }
-
-  .pipeline-step.active { border-color: var(--accent); background: rgba(0,255,136,0.05); }
-
-  .pipeline-num {
-    font-family: 'Orbitron', monospace;
-    font-size: 28px;
-    font-weight: 900;
-    color: var(--text-dim);
-    line-height: 1;
-    margin-bottom: 4px;
-  }
-
-  .pipeline-step.active .pipeline-num { color: var(--accent); text-shadow: var(--glow); }
-
-  .pipeline-label {
-    font-size: 10px;
-    font-family: 'Share Tech Mono', monospace;
-    color: var(--text-dim);
-    letter-spacing: 1px;
-  }
-
-  /* ── NOTIFICATION ── */
-  .notification {
-    position: fixed;
-    bottom: 24px; right: 24px;
-    background: var(--panel);
-    border: 1px solid var(--accent);
-    color: var(--accent);
-    padding: 14px 20px;
-    font-family: 'Share Tech Mono', monospace;
-    font-size: 12px;
-    box-shadow: var(--glow);
-    z-index: 1000;
-    transform: translateY(100px);
-    transition: transform 0.3s cubic-bezier(0.4,0,0.2,1);
-    max-width: 320px;
-  }
-
-  .notification.show { transform: none; }
-
-  /* ── SHEET CONFIG ── */
-  .config-box {
-    background: var(--bg2);
-    border: 1px solid var(--border);
-    padding: 16px;
-    margin-bottom: 16px;
-    font-family: 'Share Tech Mono', monospace;
-    font-size: 12px;
-    position: relative;
-  }
-
-  .config-key { color: var(--text-dim); }
-  .config-val { color: var(--accent2); }
-
-  /* scrollbar */
-  ::-webkit-scrollbar { width: 4px; height: 4px; }
-  ::-webkit-scrollbar-track { background: var(--bg); }
-  ::-webkit-scrollbar-thumb { background: var(--border); }
-  ::-webkit-scrollbar-thumb:hover { background: var(--accent); }
-
-  /* Responsive */
-  @media (max-width: 900px) {
-    .kpi-grid { grid-template-columns: repeat(2, 1fr); }
-    .dash-grid { grid-template-columns: 1fr; }
-    .form-grid { grid-template-columns: 1fr; }
-    .pipeline { flex-direction: column; }
-    .pipeline-step::after { display: none; }
-  }
-
-  @media (max-width: 600px) {
-    .kpi-grid { grid-template-columns: 1fr 1fr; }
-    .tabs { overflow-x: auto; }
-    .kpi-value { font-size: 24px; }
-  }
+:root{
+  --bg:#050505;--bg2:#0a0a0a;--panel:#111;--border:#1a1a1a;
+  --accent:#00ff88;--accent2:#00ccff;--accent3:#ff0055;
+  --purple:#aa44ff;--orange:#ff8800;--yellow:#ffdd00;
+  --text:#c8c8c8;--dim:#555;
+  --glow:0 0 20px rgba(0,255,136,.3);--glow2:0 0 20px rgba(0,204,255,.3);
+}
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:var(--bg);color:var(--text);font-family:'Rajdhani',sans-serif;font-size:15px;min-height:100vh;overflow-x:hidden}
+body::before{content:'';position:fixed;inset:0;background:repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,255,136,.012) 2px,rgba(0,255,136,.012) 4px);pointer-events:none;z-index:9999}
+body::after{content:'';position:fixed;inset:0;background-image:linear-gradient(rgba(0,255,136,.025) 1px,transparent 1px),linear-gradient(90deg,rgba(0,255,136,.025) 1px,transparent 1px);background-size:40px 40px;pointer-events:none;z-index:0}
+
+/* ── HEADER ── */
+.header{position:sticky;top:0;z-index:200;background:rgba(5,5,5,.97);border-bottom:1px solid var(--accent);padding:0 16px;display:flex;align-items:center;justify-content:space-between;height:52px;backdrop-filter:blur(10px);box-shadow:0 0 30px rgba(0,255,136,.1);gap:10px}
+.logo{display:flex;align-items:center;gap:10px;text-decoration:none}
+.logo-img{width:32px;height:32px;border-radius:50%;border:1.5px solid var(--accent);object-fit:cover;flex-shrink:0}
+.logo-text{font-family:'Orbitron',monospace;font-size:14px;font-weight:900;color:var(--accent);letter-spacing:2px;text-shadow:var(--glow);white-space:nowrap}
+.logo-text span{color:var(--accent2)}
+.header-actions{display:flex;align-items:center;gap:8px;flex-shrink:0}
+.header-status{font-family:'Share Tech Mono',monospace;font-size:10px;color:var(--dim);display:flex;gap:12px;align-items:center}
+.status-dot{width:7px;height:7px;border-radius:50%;background:var(--accent);box-shadow:0 0 8px var(--accent);animation:pulse 2s infinite;display:inline-block;margin-right:5px}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+.hbtn{background:none;border:1px solid var(--border);color:var(--dim);padding:5px 12px;font-family:'Share Tech Mono',monospace;font-size:10px;cursor:pointer;transition:all .2s;letter-spacing:1px;white-space:nowrap}
+.hbtn:hover{border-color:var(--accent);color:var(--accent);box-shadow:var(--glow)}
+.hbtn.accent{background:var(--accent);color:#000;border-color:var(--accent);font-weight:700}
+.hbtn.accent:hover{background:#00ddaa}
+.hbtn-icon{background:none;border:1px solid var(--border);color:var(--dim);width:32px;height:32px;cursor:pointer;font-size:15px;display:flex;align-items:center;justify-content:center;transition:all .2s}
+.hbtn-icon:hover{border-color:var(--accent);color:var(--accent)}
+#refresh-status{font-family:'Share Tech Mono',monospace;font-size:9px;color:var(--dim);max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+/* ── TABS ── */
+.tabs{display:flex;background:var(--bg2);border-bottom:1px solid var(--border);padding:0 16px;position:sticky;top:52px;z-index:99;overflow-x:auto}
+.tab{font-family:'Orbitron',monospace;font-size:9px;letter-spacing:2px;padding:12px 16px;cursor:pointer;border:none;background:none;color:var(--dim);border-bottom:2px solid transparent;transition:all .2s;white-space:nowrap;text-transform:uppercase}
+.tab:hover{color:var(--accent)}
+.tab.active{color:var(--accent);border-bottom-color:var(--accent);background:rgba(0,255,136,.05);text-shadow:var(--glow)}
+
+/* ── LAYOUT ── */
+.main{padding:16px;max-width:1400px;margin:0 auto;position:relative;z-index:1}
+.page{display:none}.page.active{display:block;animation:fadeIn .25s ease}
+@keyframes fadeIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+
+/* ── PANELS ── */
+.panel{background:var(--panel);border:1px solid var(--border);border-radius:2px;padding:18px;position:relative;overflow:hidden}
+.panel::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,var(--accent),transparent);opacity:.4}
+.panel-title{font-family:'Orbitron',monospace;font-size:9px;letter-spacing:3px;color:var(--dim);text-transform:uppercase;margin-bottom:14px;display:flex;align-items:center;gap:8px}
+.panel-title::after{content:'';flex:1;height:1px;background:var(--border)}
+
+/* ── KPI ── */
+.kpi-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-bottom:16px}
+.kpi-card{background:var(--panel);border:1px solid var(--border);padding:16px;transition:border-color .3s;cursor:default}
+.kpi-card:hover{border-color:var(--accent);box-shadow:var(--glow)}
+.kpi-label{font-family:'Share Tech Mono',monospace;font-size:9px;color:var(--dim);letter-spacing:2px;text-transform:uppercase;margin-bottom:6px}
+.kpi-value{font-family:'Orbitron',monospace;font-size:28px;font-weight:900;line-height:1;margin-bottom:3px}
+.kpi-sub{font-size:10px;color:var(--dim)}
+.kpi-card:nth-child(1) .kpi-value{color:var(--accent);text-shadow:var(--glow)}
+.kpi-card:nth-child(2) .kpi-value{color:var(--accent2);text-shadow:var(--glow2)}
+.kpi-card:nth-child(3) .kpi-value{color:var(--purple);text-shadow:0 0 20px rgba(170,68,255,.4)}
+.kpi-card:nth-child(4) .kpi-value{color:var(--orange);text-shadow:0 0 20px rgba(255,136,0,.4)}
+.kpi-card:nth-child(5) .kpi-value{color:var(--yellow);text-shadow:0 0 20px rgba(255,221,0,.4)}
+
+/* ── PIPELINE ── */
+.pipeline{display:flex;gap:0;margin-bottom:16px}
+.pipeline-step{flex:1;padding:12px 8px;background:var(--panel);border:1px solid var(--border);text-align:center;position:relative}
+.pipeline-step::after{content:'▶';position:absolute;right:-9px;top:50%;transform:translateY(-50%);color:var(--border);font-size:12px;z-index:2}
+.pipeline-step:last-child::after{display:none}
+.pipeline-step.active{border-color:var(--accent);background:rgba(0,255,136,.04)}
+.pipeline-num{font-family:'Orbitron',monospace;font-size:22px;font-weight:900;color:var(--dim);line-height:1;margin-bottom:3px}
+.pipeline-step.active .pipeline-num{color:var(--accent);text-shadow:var(--glow)}
+.pipeline-label{font-size:9px;font-family:'Share Tech Mono',monospace;color:var(--dim);letter-spacing:1px}
+
+/* ── DASH GRID ── */
+.dash-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;margin-bottom:16px}
+
+/* ── PROGRESS BARS ── */
+.progress-item{margin-bottom:12px}
+.progress-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:5px}
+.progress-label{font-family:'Share Tech Mono',monospace;font-size:10px;color:var(--text)}
+.progress-count{font-family:'Orbitron',monospace;font-size:11px;color:var(--accent)}
+.progress-bar{height:5px;background:var(--bg);border:1px solid var(--border);overflow:hidden}
+.progress-fill{height:100%;transition:width 1s cubic-bezier(.4,0,.2,1);position:relative}
+.progress-fill::after{content:'';position:absolute;right:0;top:0;bottom:0;width:3px;background:rgba(255,255,255,.5);filter:blur(2px)}
+
+/* ── TABLE ── */
+.table-wrap{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{font-family:'Orbitron',monospace;font-size:8px;letter-spacing:2px;color:var(--dim);text-align:left;padding:9px 10px;border-bottom:1px solid var(--border);white-space:nowrap;background:var(--bg2)}
+td{padding:10px 10px;border-bottom:1px solid rgba(255,255,255,.04);vertical-align:top;max-width:260px}
+tr:hover td{background:rgba(0,255,136,.025)}
+.story-title{font-weight:600;color:#fff;font-size:13px;margin-bottom:2px}
+.story-preview{color:var(--dim);font-size:11px;line-height:1.4;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+.badge{display:inline-block;padding:2px 8px;font-family:'Share Tech Mono',monospace;font-size:9px;letter-spacing:1px;border-radius:2px;text-transform:uppercase}
+.badge-generated{background:rgba(0,255,136,.1);color:var(--accent);border:1px solid rgba(0,255,136,.2)}
+.badge-storyboarded{background:rgba(0,204,255,.1);color:var(--accent2);border:1px solid rgba(0,204,255,.2)}
+.badge-ready{background:rgba(255,136,0,.1);color:var(--orange);border:1px solid rgba(255,136,0,.2)}
+.badge-approved{background:rgba(255,221,0,.1);color:var(--yellow);border:1px solid rgba(255,221,0,.2)}
+.badge-published{background:rgba(136,255,0,.1);color:#88ff00;border:1px solid rgba(136,255,0,.2)}
+.badge-review{background:rgba(170,68,255,.1);color:var(--purple);border:1px solid rgba(170,68,255,.2)}
+.theme-tag{display:inline-block;padding:2px 7px;background:rgba(0,204,255,.07);color:var(--accent2);border:1px solid rgba(0,204,255,.15);font-size:10px;font-family:'Share Tech Mono',monospace}
+
+/* ── BUTTONS ── */
+.btn-primary{background:var(--accent);color:#000;border:none;padding:10px 24px;font-family:'Orbitron',monospace;font-size:10px;font-weight:700;letter-spacing:2px;cursor:pointer;transition:all .2s;text-transform:uppercase}
+.btn-primary:hover{background:#00ddaa;box-shadow:var(--glow);transform:translateY(-1px)}
+.btn-primary:disabled{opacity:.5;cursor:not-allowed;transform:none}
+.btn-secondary{background:none;color:var(--accent2);border:1px solid var(--accent2);padding:10px 20px;font-family:'Orbitron',monospace;font-size:9px;letter-spacing:2px;cursor:pointer;transition:all .2s}
+.btn-secondary:hover{background:rgba(0,204,255,.1);box-shadow:var(--glow2)}
+.btn-danger{background:var(--accent3);color:#fff;border:none;padding:10px 20px;font-family:'Orbitron',monospace;font-size:10px;font-weight:700;letter-spacing:2px;cursor:pointer;transition:all .2s}
+.btn-copy{background:none;border:1px solid var(--border);color:var(--dim);padding:3px 8px;font-size:9px;font-family:'Share Tech Mono',monospace;cursor:pointer;transition:all .2s;letter-spacing:1px}
+.btn-copy:hover{border-color:var(--accent);color:var(--accent)}
+
+/* ── FORMS ── */
+.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px}
+.form-group{display:flex;flex-direction:column;gap:5px}
+.form-group.full{grid-column:1/-1}
+label{font-family:'Share Tech Mono',monospace;font-size:9px;color:var(--dim);letter-spacing:2px;text-transform:uppercase}
+input,textarea,select{background:var(--bg);border:1px solid var(--border);color:var(--text);padding:9px 11px;font-family:'Rajdhani',sans-serif;font-size:14px;outline:none;transition:border-color .2s,box-shadow .2s;width:100%}
+input:focus,textarea:focus,select:focus{border-color:var(--accent);box-shadow:0 0 0 1px rgba(0,255,136,.2)}
+select option{background:var(--bg2)}
+textarea{min-height:100px;resize:vertical;line-height:1.5}
+.char-count{font-family:'Share Tech Mono',monospace;font-size:9px;color:var(--dim);text-align:right}
+
+/* ── UPLOAD ── */
+.upload-zone{border:1px dashed var(--border);padding:24px;text-align:center;cursor:pointer;transition:all .2s;position:relative}
+.upload-zone:hover,.upload-zone.drag-over{border-color:var(--accent);background:rgba(0,255,136,.03)}
+.upload-zone input[type="file"]{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%}
+.upload-icon{font-size:28px;margin-bottom:6px;display:block}
+.upload-label{font-family:'Share Tech Mono',monospace;font-size:10px;color:var(--dim);letter-spacing:1px}
+.upload-filename{margin-top:6px;font-size:11px;color:var(--accent);font-family:'Share Tech Mono',monospace}
+.upload-progress-wrap{margin-top:14px;display:none}
+.upload-progress-wrap.visible{display:block}
+.upload-stage{display:flex;align-items:center;gap:9px;margin-bottom:7px;font-family:'Share Tech Mono',monospace;font-size:10px}
+.stage-indicator{width:9px;height:9px;border-radius:50%;background:var(--border);flex-shrink:0;transition:background .3s,box-shadow .3s}
+.stage-indicator.active{background:var(--orange);box-shadow:0 0 8px var(--orange);animation:pulse 1s infinite}
+.stage-indicator.done{background:var(--accent);box-shadow:0 0 8px var(--accent);animation:none}
+.big-progress{height:3px;background:var(--bg);border:1px solid var(--border);margin-top:12px;overflow:hidden}
+.big-progress-fill{height:100%;background:linear-gradient(90deg,var(--accent),var(--accent2));width:0%;transition:width .5s ease;box-shadow:0 0 10px var(--accent)}
+.upload-result{margin-top:10px;padding:10px;background:rgba(0,255,136,.05);border:1px solid rgba(0,255,136,.2);font-family:'Share Tech Mono',monospace;font-size:10px;color:var(--accent);display:none;word-break:break-all}
+.upload-result.visible{display:block}
+
+/* ── NOTIFICATION ── */
+.notification{position:fixed;bottom:20px;right:20px;background:var(--panel);border:1px solid var(--accent);color:var(--accent);padding:12px 18px;font-family:'Share Tech Mono',monospace;font-size:11px;box-shadow:var(--glow);z-index:9000;transform:translateY(100px);transition:transform .3s cubic-bezier(.4,0,.2,1);max-width:300px}
+.notification.show{transform:none}
+.notification.error{border-color:var(--accent3);color:var(--accent3);box-shadow:0 0 20px rgba(255,0,85,.3)}
+
+/* ── MODAL ── */
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:5000;display:none;align-items:center;justify-content:center;padding:20px}
+.modal-overlay.open{display:flex}
+.modal{background:var(--panel);border:1px solid var(--accent);max-width:700px;width:100%;max-height:85vh;overflow-y:auto;padding:24px;position:relative}
+.modal-close{position:absolute;top:12px;right:12px;background:none;border:1px solid var(--border);color:var(--dim);width:28px;height:28px;cursor:pointer;font-size:16px;display:flex;align-items:center;justify-content:center}
+.modal-close:hover{border-color:var(--accent3);color:var(--accent3)}
+
+/* ── REVIEW CARD ── */
+.review-card{background:var(--bg2);border:1px solid var(--border);padding:16px;margin-bottom:14px;transition:border-color .2s}
+.review-card:hover{border-color:var(--accent2)}
+.review-card.approved{border-color:var(--yellow)}
+.review-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px}
+.review-field{background:var(--bg);padding:8px 10px;border:1px solid var(--border)}
+.review-field-label{font-family:'Share Tech Mono',monospace;font-size:9px;color:var(--dim);letter-spacing:1px;margin-bottom:3px}
+.review-field-val{font-size:12px;color:var(--text);line-height:1.4;max-height:60px;overflow:hidden}
+
+/* ── SCROLLBAR ── */
+::-webkit-scrollbar{width:3px;height:3px}
+::-webkit-scrollbar-track{background:var(--bg)}
+::-webkit-scrollbar-thumb{background:var(--border)}
+::-webkit-scrollbar-thumb:hover{background:var(--accent)}
+
+/* ── SETTINGS MODAL ── */
+.settings-modal{position:fixed;top:0;right:-400px;width:380px;height:100vh;background:var(--panel);border-left:1px solid var(--border);z-index:4000;transition:right .3s ease;padding:20px;overflow-y:auto;box-shadow:-10px 0 30px rgba(0,0,0,.5)}
+.settings-modal.open{right:0}
+.settings-overlay{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:3999;display:none}
+.settings-overlay.open{display:block}
+
+/* ── RESPONSIVE ── */
+@media(max-width:900px){
+  .kpi-grid{grid-template-columns:repeat(3,1fr)}
+  .dash-grid{grid-template-columns:1fr}
+  .form-grid{grid-template-columns:1fr}
+  .pipeline{flex-wrap:wrap}
+  .pipeline-step::after{display:none}
+}
+@media(max-width:600px){
+  .kpi-grid{grid-template-columns:1fr 1fr}
+  .kpi-value{font-size:20px}
+}
 </style>
 </head>
 <body>
 
-<!-- HEADER -->
+<!-- ── HEADER ── -->
 <header class="header">
-  <div class="logo">STORY<span>FORGE</span></div>
-  <div class="header-status">
-    <span><span class="status-dot"></span>SYSTEM ONLINE</span>
-    <span id="clock">--:--:--</span>
-    <span id="story-count-header">0 STORIES</span>
+  <a class="logo" href="#" onclick="switchTab('dashboard');return false">
+    <img class="logo-img" src="https://yt3.ggpht.com/t1dklM-gbcPmlsLqDAOYg_xhiz7wBUkf6-HQgtRhKOnNiiZqd-tiwqvj3xa9CkQpTD_lWbLX4A=s48-c-k-c0x00ffffff-no-rj" alt="BLS" onerror="this.style.display='none'">
+    <span class="logo-text">BRIGHT <span>LITTLE</span> STORIES</span>
+  </a>
+  <div class="header-actions">
+    <span id="refresh-status">⟳ Loading...</span>
+    <button class="hbtn accent" onclick="manualRefresh()">⟳ REFRESH</button>
+    <button class="hbtn" onclick="switchTab('add')" style="color:var(--accent2);border-color:var(--accent2)">+ ADD STORY</button>
+    <span id="clock" style="font-family:'Share Tech Mono',monospace;font-size:10px;color:var(--dim)">--:--:--</span>
+    <span id="story-count-header" style="font-family:'Share Tech Mono',monospace;font-size:10px;color:var(--dim)">0 STORIES</span>
+    <button class="hbtn-icon" onclick="openSettings()" title="Settings">⚙</button>
   </div>
 </header>
 
-<!-- TABS -->
+<!-- ── TABS ── -->
 <nav class="tabs">
   <button class="tab active" onclick="switchTab('dashboard')">⬡ Dashboard</button>
   <button class="tab" onclick="switchTab('stories')">⬡ Stories</button>
-  <button class="tab" onclick="switchTab('add')">⬡ Add Story</button>
-  <button class="tab" onclick="switchTab('youtube')">⬡ YouTube</button>
   <button class="tab" onclick="switchTab('upload')">⬡ Upload</button>
-  <button class="tab" onclick="switchTab('settings')">⬡ Settings</button>
+  <button class="tab" onclick="switchTab('review')">⬡ Review</button>
+  <button class="tab" onclick="switchTab('publish')">⬡ Publish</button>
 </nav>
 
-<!-- MAIN -->
+<!-- ── MAIN ── -->
 <main class="main">
 
-  <!-- ══════════ DASHBOARD PAGE ══════════ -->
-  <div class="page active" id="page-dashboard">
-
-    <!-- KPI Cards -->
-    <div class="kpi-grid" id="kpi-grid">
-      <div class="kpi-card">
-        <div class="kpi-label">Total Stories</div>
-        <div class="kpi-value" id="kpi-total">—</div>
-        <div class="kpi-sub">all time</div>
-      </div>
-      <div class="kpi-card">
-        <div class="kpi-label">Total Words</div>
-        <div class="kpi-value" id="kpi-words">—</div>
-        <div class="kpi-sub">across all stories</div>
-      </div>
-      <div class="kpi-card">
-        <div class="kpi-label">Avg Words</div>
-        <div class="kpi-value" id="kpi-avg">—</div>
-        <div class="kpi-sub">per story</div>
-      </div>
-      <div class="kpi-card">
-        <div class="kpi-label">Published</div>
-        <div class="kpi-value" id="kpi-published">—</div>
-        <div class="kpi-sub">on YouTube</div>
-      </div>
-    </div>
-
-    <!-- Pipeline -->
-    <div class="pipeline" id="pipeline">
-      <div class="pipeline-step" id="pipe-generated">
-        <div class="pipeline-num" id="n-generated">0</div>
-        <div class="pipeline-label">✍️ Generated</div>
-      </div>
-      <div class="pipeline-step" id="pipe-storyboarded">
-        <div class="pipeline-num" id="n-storyboarded">0</div>
-        <div class="pipeline-label">🎨 Storyboarded</div>
-      </div>
-      <div class="pipeline-step" id="pipe-recorded">
-        <div class="pipeline-num" id="n-recorded">0</div>
-        <div class="pipeline-label">🎙️ Recorded</div>
-      </div>
-      <div class="pipeline-step" id="pipe-uploaded">
-        <div class="pipeline-num" id="n-uploaded">0</div>
-        <div class="pipeline-label">⬆️ Uploaded</div>
-      </div>
-      <div class="pipeline-step" id="pipe-published">
-        <div class="pipeline-num" id="n-published">0</div>
-        <div class="pipeline-label">✅ Published</div>
-      </div>
-    </div>
-
-    <div class="dash-grid">
-      <!-- Status Breakdown -->
-      <div class="panel">
-        <div class="panel-title">Status Breakdown</div>
-        <div id="status-bars">
-          <div class="progress-item">
-            <div class="progress-header">
-              <span class="progress-label">Loading...</span>
-            </div>
-            <div class="progress-bar"><div class="progress-fill" style="width:0%;background:var(--accent)"></div></div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Theme Breakdown -->
-      <div class="panel">
-        <div class="panel-title">Theme Breakdown</div>
-        <div id="theme-bars">
-          <div class="progress-item">
-            <div class="progress-header">
-              <span class="progress-label">Loading...</span>
-            </div>
-            <div class="progress-bar"><div class="progress-fill" style="width:0%;background:var(--accent2)"></div></div>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <div class="panel" style="text-align:center;padding:12px;font-family:'Share Tech Mono',monospace;font-size:11px;color:var(--text-dim)">
-      <span id="last-refresh">⟳ Connecting to Google Sheets...</span>
-      &nbsp;&nbsp;
-      <button class="btn-copy" onclick="loadData()">REFRESH DATA</button>
-    </div>
+<!-- ════════════ DASHBOARD ════════════ -->
+<div class="page active" id="page-dashboard">
+  <div class="kpi-grid">
+    <div class="kpi-card"><div class="kpi-label">Total Stories</div><div class="kpi-value" id="kpi-total">—</div><div class="kpi-sub">all time</div></div>
+    <div class="kpi-card"><div class="kpi-label">Total Words</div><div class="kpi-value" id="kpi-words">—</div><div class="kpi-sub">written</div></div>
+    <div class="kpi-card"><div class="kpi-label">Avg Words</div><div class="kpi-value" id="kpi-avg">—</div><div class="kpi-sub">per story</div></div>
+    <div class="kpi-card"><div class="kpi-label">Published</div><div class="kpi-value" id="kpi-published">—</div><div class="kpi-sub">on YouTube</div></div>
+    <div class="kpi-card"><div class="kpi-label">Remaining</div><div class="kpi-value" id="kpi-remaining">—</div><div class="kpi-sub">to publish</div></div>
   </div>
 
-  <!-- ══════════ STORIES PAGE ══════════ -->
-  <div class="page" id="page-stories">
+  <div class="pipeline" id="pipeline">
+    <div class="pipeline-step" id="pipe-generated"><div class="pipeline-num" id="n-generated">0</div><div class="pipeline-label">✍️ Generated</div></div>
+    <div class="pipeline-step" id="pipe-storyboarded"><div class="pipeline-num" id="n-storyboarded">0</div><div class="pipeline-label">🎨 Storyboarded</div></div>
+    <div class="pipeline-step" id="pipe-ready"><div class="pipeline-num" id="n-ready">0</div><div class="pipeline-label">📦 Ready</div></div>
+    <div class="pipeline-step" id="pipe-review"><div class="pipeline-num" id="n-review">0</div><div class="pipeline-label">🔍 Review</div></div>
+    <div class="pipeline-step" id="pipe-approved"><div class="pipeline-num" id="n-approved">0</div><div class="pipeline-label">✅ Approved</div></div>
+    <div class="pipeline-step" id="pipe-published"><div class="pipeline-num" id="n-published">0</div><div class="pipeline-label">🎬 Published</div></div>
+  </div>
+
+  <div class="dash-grid">
     <div class="panel">
-      <div class="panel-title">All Stories</div>
-      <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap">
-        <input id="search-box" placeholder="Search stories..." style="flex:1;min-width:200px" oninput="filterStories()">
-        <select id="filter-status" onchange="filterStories()" style="width:160px">
-          <option value="">All Statuses</option>
-          <option>Generated</option>
-          <option>Storyboarded</option>
-          <option>Recorded</option>
-          <option>Uploaded</option>
-          <option>Published</option>
-        </select>
-        <select id="filter-theme" onchange="filterStories()" style="width:140px">
-          <option value="">All Themes</option>
-        </select>
-      </div>
-      <div class="table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th>THEME</th>
-              <th>TITLE & STORY</th>
-              <th>MORAL</th>
-              <th>WORDS</th>
-              <th>DATE</th>
-              <th>STATUS</th>
-              <th>ACTIONS</th>
-            </tr>
-          </thead>
-          <tbody id="story-table-body">
-            <tr><td colspan="7" style="text-align:center;color:var(--text-dim);padding:40px">Loading stories...</td></tr>
-          </tbody>
-        </table>
-      </div>
-      <div style="margin-top:12px;font-family:'Share Tech Mono',monospace;font-size:11px;color:var(--text-dim)" id="story-count-label"></div>
+      <div class="panel-title">Status Breakdown</div>
+      <div id="status-bars"></div>
+    </div>
+    <div class="panel">
+      <div class="panel-title">Theme Breakdown</div>
+      <div id="theme-bars"></div>
+    </div>
+    <div class="panel" style="display:flex;flex-direction:column;align-items:center;justify-content:center">
+      <div class="panel-title">Content Pipeline</div>
+      <canvas id="donut-chart" style="max-width:200px;max-height:200px"></canvas>
+      <div id="donut-legend" style="margin-top:12px;font-family:'Share Tech Mono',monospace;font-size:10px;display:flex;flex-direction:column;gap:4px"></div>
     </div>
   </div>
+</div>
 
-  <!-- ══════════ ADD STORY PAGE ══════════ -->
-  <div class="page" id="page-add">
-    <div class="panel" style="max-width:800px">
-      <div class="panel-title">Add New Story</div>
+<!-- ════════════ STORIES ════════════ -->
+<div class="page" id="page-stories">
+  <div class="panel">
+    <div class="panel-title">All Stories</div>
+    <div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap">
+      <input id="search-box" placeholder="Search stories..." style="flex:1;min-width:180px" oninput="filterStories()">
+      <select id="filter-status" onchange="filterStories()" style="width:150px">
+        <option value="">All Statuses</option>
+        <option>Generated</option><option>Storyboarded</option><option>Ready</option>
+        <option>Review</option><option>Approved</option><option>Published</option>
+      </select>
+      <select id="filter-theme" onchange="filterStories()" style="width:130px">
+        <option value="">All Themes</option>
+      </select>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr>
+          <th>#</th><th>THEME</th><th>TITLE & STORY</th><th>MORAL</th>
+          <th>WORDS</th><th>DATE</th><th>STATUS</th><th>ACTIONS</th>
+        </tr></thead>
+        <tbody id="story-table-body">
+          <tr><td colspan="8" style="text-align:center;color:var(--dim);padding:30px">Loading...</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div style="margin-top:10px;font-family:'Share Tech Mono',monospace;font-size:10px;color:var(--dim)" id="story-count-label"></div>
+  </div>
+</div>
 
-      <div class="form-grid">
-        <div class="form-group">
-          <label>Theme</label>
-          <select id="f-theme">
-            <option>Adventure</option>
-            <option>Friendship</option>
-            <option>Magic</option>
-            <option>Kindness</option>
-            <option>Courage</option>
-            <option>Family</option>
-            <option>Nature</option>
-            <option>Custom...</option>
-          </select>
-        </div>
-        <div class="form-group">
-          <label>Status</label>
-          <select id="f-status">
-            <option>Generated</option>
-            <option>Storyboarded</option>
-            <option>Recorded</option>
-            <option>Uploaded</option>
-            <option>Published</option>
-          </select>
-        </div>
-        <div class="form-group full">
-          <label>Story Title</label>
-          <input id="f-title" placeholder="e.g. Luna and the Lost Star" maxlength="120">
-        </div>
-        <div class="form-group full">
-          <label>Story Text</label>
-          <textarea id="f-story" placeholder="Write your full story here..." oninput="updateCount(this,'f-story-count')"></textarea>
-          <div class="char-count"><span id="f-story-count">0</span> words</div>
-        </div>
-        <div class="form-group full">
-          <label>Moral / Lesson</label>
-          <textarea id="f-moral" placeholder="What lesson does this story teach?" style="min-height:60px" oninput="updateCount(this,'f-moral-count')"></textarea>
-          <div class="char-count"><span id="f-moral-count">0</span> words</div>
-        </div>
+<!-- ════════════ UPLOAD ════════════ -->
+<div class="page" id="page-upload">
+  <div class="panel" style="max-width:900px;margin-bottom:14px">
+    <div class="panel-title">① Link to Story</div>
+    <div style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap">
+      <div class="form-group" style="flex:1;min-width:200px">
+        <label>Which story are these files for?</label>
+        <select id="upload-story-select" onchange="onUploadStorySelect()">
+          <option value="">-- Select story first --</option>
+        </select>
       </div>
-
-      <div style="display:flex;gap:12px;align-items:center">
-        <button class="btn-primary" onclick="submitStory()">⬡ ADD TO SHEET</button>
-        <button class="btn-secondary" onclick="clearForm()">CLEAR</button>
-        <span id="submit-msg" style="font-family:'Share Tech Mono',monospace;font-size:11px;color:var(--accent);opacity:0;transition:opacity 0.3s"></span>
-      </div>
-
-      <div style="margin-top:24px;padding:16px;background:var(--bg2);border:1px solid var(--border)">
-        <div class="panel-title" style="margin-bottom:12px">⚙ Google Sheets Connection</div>
-        <p style="font-family:'Share Tech Mono',monospace;font-size:11px;color:var(--text-dim);line-height:1.8">
-          To connect form submissions to your Google Sheet:<br>
-          1. Open your Sheet → Extensions → Apps Script<br>
-          2. Paste the AppScript_Setup.gs code<br>
-          3. Deploy → New Deployment → Web App → Anyone<br>
-          4. Copy the Web App URL and paste in Settings tab
-        </p>
+      <div id="upload-story-info" style="font-family:'Share Tech Mono',monospace;font-size:10px;color:var(--dim);padding-bottom:10px;display:none">
+        Row: <span id="upload-story-row" style="color:var(--accent)">—</span> &nbsp;|&nbsp;
+        Status: <span id="upload-story-status" style="color:var(--accent2)">—</span>
       </div>
     </div>
   </div>
 
-  <!-- ══════════ YOUTUBE PAGE ══════════ -->
-  <div class="page" id="page-youtube">
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;max-width:900px;margin-bottom:14px">
+    <div class="panel">
+      <div class="panel-title">② Thumbnail → Drive</div>
+      <div class="upload-zone" id="thumb-zone">
+        <input type="file" accept="image/*" onchange="handleThumb(this)">
+        <span class="upload-icon">🖼️</span>
+        <div class="upload-label">DROP IMAGE OR CLICK<br>PNG / JPG / WEBP — 1280×720</div>
+        <div class="upload-filename" id="thumb-name"></div>
+      </div>
+      <div id="thumb-preview-wrap" style="display:none;margin-top:10px">
+        <img id="thumb-preview" style="width:100%;border:1px solid var(--border)">
+      </div>
+      <div class="upload-progress-wrap" id="thumb-progress">
+        <div class="upload-stage"><div class="stage-indicator" id="ts1"></div>Reading file</div>
+        <div class="upload-stage"><div class="stage-indicator" id="ts2"></div>Uploading to Google Drive</div>
+        <div class="upload-stage"><div class="stage-indicator" id="ts3"></div>Making public</div>
+        <div class="upload-stage"><div class="stage-indicator" id="ts4"></div>Saving URL to Sheet</div>
+        <div class="big-progress"><div class="big-progress-fill" id="thumb-bar"></div></div>
+      </div>
+      <div class="upload-result" id="thumb-url"></div>
+      <button class="btn-primary" onclick="uploadThumbnail()" style="width:100%;margin-top:12px">⬡ UPLOAD THUMBNAIL</button>
+    </div>
 
-    <!-- Auth Banner -->
-    <div id="yt-auth-banner" style="max-width:900px;margin-bottom:16px;padding:16px 20px;background:rgba(255,0,85,0.07);border:1px solid rgba(255,0,85,0.25);display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px">
+    <div class="panel">
+      <div class="panel-title">③ Video → Drive</div>
+      <div class="upload-zone" id="video-zone">
+        <input type="file" accept="video/*" onchange="handleVideo(this)">
+        <span class="upload-icon">🎬</span>
+        <div class="upload-label">DROP VIDEO OR CLICK<br>MP4 recommended</div>
+        <div class="upload-filename" id="video-name"></div>
+      </div>
+      <div id="video-size-info" style="margin-top:6px;font-family:'Share Tech Mono',monospace;font-size:9px;color:var(--dim)"></div>
+      <div class="upload-progress-wrap" id="video-progress">
+        <div class="upload-stage"><div class="stage-indicator" id="vs1"></div>Reading file</div>
+        <div class="upload-stage"><div class="stage-indicator" id="vs2"></div>Uploading to Google Drive</div>
+        <div class="upload-stage"><div class="stage-indicator" id="vs3"></div>Making public</div>
+        <div class="upload-stage"><div class="stage-indicator" id="vs4"></div>Saving URL to Sheet</div>
+        <div class="big-progress"><div class="big-progress-fill" id="video-bar"></div></div>
+        <div style="font-family:'Share Tech Mono',monospace;font-size:9px;color:var(--dim);margin-top:5px" id="video-upload-pct"></div>
+      </div>
+      <div class="upload-result" id="video-url"></div>
+      <button class="btn-primary" onclick="uploadVideo()" style="width:100%;margin-top:12px">⬡ UPLOAD VIDEO</button>
+    </div>
+  </div>
+
+  <!-- Schedule & Playlist -->
+  <div class="panel" style="max-width:900px;margin-bottom:14px">
+    <div class="panel-title">④ Schedule & Playlist</div>
+    <div class="form-grid">
+      <div class="form-group">
+        <label>Schedule Date & Time (leave blank = now)</label>
+        <input type="datetime-local" id="upload-schedule">
+      </div>
+      <div class="form-group">
+        <label>Add to Playlist (YouTube Playlist ID)</label>
+        <input id="upload-playlist" placeholder="e.g. PLxxxxxxxxxxxxxxx">
+      </div>
+    </div>
+  </div>
+
+  <div class="panel" style="max-width:900px">
+    <div class="panel-title">How This Works</div>
+    <div style="font-family:'Share Tech Mono',monospace;font-size:11px;line-height:2;color:var(--dim)">
+      <div>① Select story → ② Upload thumbnail → ③ Upload video → Status auto-sets to <span style="color:var(--orange)">Ready</span></div>
+      <div>④ Go to Review tab → check everything → click Approve</div>
+      <div>⑤ Go to Publish tab → upload to YouTube with one click</div>
+      <div style="color:var(--orange);margin-top:6px">⚠ Sign in via Publish tab first for uploads to work</div>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════ REVIEW ════════════ -->
+<div class="page" id="page-review">
+  <div class="panel" style="margin-bottom:14px">
+    <div class="panel-title">Review Queue</div>
+    <div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap">
+      <select id="review-filter" onchange="renderReview()" style="width:160px">
+        <option value="">All Statuses</option>
+        <option value="Ready">Ready</option>
+        <option value="Approved">Approved</option>
+        <option value="Review">In Review</option>
+      </select>
+      <button class="btn-copy" onclick="renderReview()">REFRESH</button>
+    </div>
+    <div id="review-container">
+      <div style="color:var(--dim);font-family:'Share Tech Mono',monospace;font-size:12px;padding:20px;text-align:center">Loading stories...</div>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════ PUBLISH (YouTube) ════════════ -->
+<div class="page" id="page-publish">
+  <div id="yt-auth-banner" style="max-width:900px;margin-bottom:14px;padding:14px 18px;background:rgba(255,0,85,.07);border:1px solid rgba(255,0,85,.25);display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px">
+    <div>
+      <div style="font-family:'Orbitron',monospace;font-size:10px;color:var(--accent3);letter-spacing:2px;margin-bottom:3px">⚡ NOT CONNECTED TO YOUTUBE</div>
+      <div style="font-family:'Share Tech Mono',monospace;font-size:10px;color:var(--dim)">Sign in with your channel's Google account</div>
+    </div>
+    <button class="btn-primary" onclick="ytSignIn()" style="background:var(--accent3)">🔐 SIGN IN WITH GOOGLE</button>
+  </div>
+  <div id="yt-auth-ok" style="max-width:900px;margin-bottom:14px;padding:12px 18px;background:rgba(0,255,136,.06);border:1px solid rgba(0,255,136,.2);display:none;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px">
+    <div style="display:flex;align-items:center;gap:10px">
+      <div style="width:8px;height:8px;border-radius:50%;background:var(--accent);box-shadow:var(--glow);animation:pulse 2s infinite"></div>
       <div>
-        <div style="font-family:'Orbitron',monospace;font-size:11px;color:var(--accent3);letter-spacing:2px;margin-bottom:4px">⚡ YOUTUBE — NOT CONNECTED</div>
-        <div style="font-family:'Share Tech Mono',monospace;font-size:11px;color:var(--text-dim)">Sign in with your channel's Google account to enable direct upload</div>
-      </div>
-      <button class="btn-primary" onclick="ytSignIn()" style="background:var(--accent3);white-space:nowrap">
-        🔐 SIGN IN WITH GOOGLE
-      </button>
-    </div>
-
-    <div id="yt-auth-ok" style="max-width:900px;margin-bottom:16px;padding:14px 20px;background:rgba(0,255,136,0.06);border:1px solid rgba(0,255,136,0.2);display:none;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px">
-      <div style="display:flex;align-items:center;gap:12px">
-        <div style="width:10px;height:10px;border-radius:50%;background:var(--accent);box-shadow:var(--glow);animation:pulse 2s infinite"></div>
-        <div>
-          <div style="font-family:'Orbitron',monospace;font-size:11px;color:var(--accent);letter-spacing:2px">✓ YOUTUBE CONNECTED</div>
-          <div style="font-family:'Share Tech Mono',monospace;font-size:11px;color:var(--text-dim)" id="yt-user-email">—</div>
-        </div>
-      </div>
-      <button class="btn-copy" onclick="ytSignOut()">SIGN OUT</button>
-    </div>
-
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;max-width:900px">
-
-      <!-- Left: Story picker + metadata -->
-      <div class="panel" style="grid-column:1/-1">
-        <div class="panel-title">Story & Metadata</div>
-        <div class="form-grid">
-          <div class="form-group">
-            <label>Select Story</label>
-            <select id="yt-story-select" onchange="populateYouTube()">
-              <option value="">-- Choose a story --</option>
-            </select>
-          </div>
-          <div class="form-group">
-            <label>Privacy</label>
-            <select id="yt-privacy">
-              <option>Public</option>
-              <option>Unlisted</option>
-              <option selected>Private</option>
-            </select>
-          </div>
-          <div class="form-group full">
-            <label>YouTube Title <span style="color:var(--text-dim)">(max 100 chars)</span></label>
-            <input id="yt-title" maxlength="100" placeholder="Auto-generated from story" oninput="document.getElementById('yt-title-count').textContent=this.value.length">
-            <div class="char-count"><span id="yt-title-count">0</span>/100</div>
-          </div>
-          <div class="form-group full">
-            <label>Description</label>
-            <textarea id="yt-desc" style="min-height:160px"></textarea>
-          </div>
-          <div class="form-group full">
-            <label>Tags <span style="color:var(--text-dim)">(comma separated)</span></label>
-            <textarea id="yt-tags" style="min-height:60px"></textarea>
-          </div>
-          <div class="form-group">
-            <label>Category</label>
-            <select id="yt-category">
-              <option value="27">Education</option>
-              <option value="24">Entertainment</option>
-              <option value="1">Film & Animation</option>
-              <option value="22">People & Blogs</option>
-            </select>
-          </div>
-          <div class="form-group">
-            <label>Made for Kids</label>
-            <select id="yt-kids"><option value="true">Yes</option><option value="false">No</option></select>
-          </div>
-        </div>
-        <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:4px">
-          <button class="btn-copy" onclick="copyField('yt-title','Title')">COPY TITLE</button>
-          <button class="btn-copy" onclick="copyField('yt-desc','Description')">COPY DESC</button>
-          <button class="btn-copy" onclick="copyField('yt-tags','Tags')">COPY TAGS</button>
-          <button class="btn-copy" onclick="copyAllYT()">COPY ALL</button>
-        </div>
-      </div>
-
-      <!-- Video file for YT -->
-      <div class="panel">
-        <div class="panel-title">Video File for YouTube</div>
-        <div class="upload-zone" id="yt-video-zone">
-          <input type="file" accept="video/*" onchange="handleYTVideo(this)">
-          <span class="upload-icon">🎬</span>
-          <div class="upload-label">SELECT VIDEO FILE<br>MP4 / MOV recommended</div>
-          <div class="upload-filename" id="yt-video-name"></div>
-        </div>
-        <div style="margin-top:10px;font-family:'Share Tech Mono',monospace;font-size:10px;color:var(--text-dim);line-height:1.8">
-          ⚠ Max 256GB / 12 hours<br>
-          ✓ MP4 (H.264) recommended<br>
-          ✓ 1920×1080 or 1280×720
-        </div>
-      </div>
-
-      <!-- Thumbnail file for YT -->
-      <div class="panel">
-        <div class="panel-title">Thumbnail for YouTube</div>
-        <div class="upload-zone" id="yt-thumb-zone">
-          <input type="file" accept="image/*" onchange="handleYTThumb(this)">
-          <span class="upload-icon">🖼️</span>
-          <div class="upload-label">SELECT THUMBNAIL<br>JPG / PNG, min 1280×720</div>
-          <div class="upload-filename" id="yt-thumb-name"></div>
-        </div>
-        <div id="yt-thumb-preview-wrap" style="display:none;margin-top:10px">
-          <img id="yt-thumb-preview" style="width:100%;border:1px solid var(--border);display:block">
-        </div>
-      </div>
-
-    </div>
-
-    <!-- Upload Progress -->
-    <div class="panel" style="max-width:900px;margin-top:16px">
-      <div class="panel-title">Upload to YouTube</div>
-
-      <div id="yt-upload-stages" style="display:none;margin-bottom:16px">
-        <div class="upload-stage" style="margin-bottom:10px"><div class="stage-indicator" id="yts1"></div><span id="yts1-label">Preparing metadata</span></div>
-        <div class="upload-stage" style="margin-bottom:10px"><div class="stage-indicator" id="yts2"></div><span id="yts2-label">Uploading video to YouTube</span></div>
-        <div class="upload-stage" style="margin-bottom:10px"><div class="stage-indicator" id="yts3"></div><span id="yts3-label">Setting thumbnail</span></div>
-        <div class="upload-stage" style="margin-bottom:10px"><div class="stage-indicator" id="yts4"></div><span id="yts4-label">Saving to Google Sheet</span></div>
-        <div class="big-progress" style="margin-top:8px"><div class="big-progress-fill" id="yt-upload-bar"></div></div>
-        <div style="font-family:'Share Tech Mono',monospace;font-size:11px;color:var(--text-dim);margin-top:8px" id="yt-upload-pct">0%</div>
-      </div>
-
-      <div id="yt-upload-result" style="display:none;padding:14px;background:rgba(0,255,136,0.05);border:1px solid rgba(0,255,136,0.2);font-family:'Share Tech Mono',monospace;font-size:12px;margin-bottom:16px">
-        <div style="color:var(--accent);margin-bottom:8px">✓ UPLOAD COMPLETE</div>
-        <div>Video ID: <span id="yt-result-id" style="color:var(--accent2)">—</span></div>
-        <div>URL: <a id="yt-result-url" href="#" target="_blank" style="color:var(--accent2)">—</a></div>
-        <div style="margin-top:8px;color:var(--text-dim)">Status updated in Google Sheet ✓</div>
-      </div>
-
-      <div id="yt-upload-error" style="display:none;padding:14px;background:rgba(255,0,85,0.05);border:1px solid rgba(255,0,85,0.2);font-family:'Share Tech Mono',monospace;font-size:12px;color:var(--accent3);margin-bottom:16px"></div>
-
-      <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
-        <button class="btn-primary" onclick="uploadToYouTube()" id="yt-upload-btn" style="background:var(--accent3)">
-          ▶ UPLOAD TO YOUTUBE NOW
-        </button>
-        <div style="display:flex;align-items:center;gap:8px">
-          <input type="checkbox" id="yt-auto-trigger" style="width:auto;accent-color:var(--accent)">
-          <label style="font-family:'Share Tech Mono',monospace;font-size:11px;color:var(--text-dim);text-transform:none;letter-spacing:0">
-            Auto-upload when status → "Uploaded"
-          </label>
-        </div>
+        <div style="font-family:'Orbitron',monospace;font-size:10px;color:var(--accent);letter-spacing:2px">✓ YOUTUBE CONNECTED</div>
+        <div style="font-family:'Share Tech Mono',monospace;font-size:10px;color:var(--dim)" id="yt-user-email">—</div>
       </div>
     </div>
-
+    <button class="btn-copy" onclick="ytSignOut()">SIGN OUT</button>
   </div>
 
-  <!-- ══════════ UPLOAD PAGE ══════════ -->
-  <div class="page" id="page-upload">
-
-    <!-- Auth warning if not signed in -->
-    <div id="upload-auth-warn" style="max-width:900px;margin-bottom:16px;padding:14px 20px;background:rgba(255,136,0,0.07);border:1px solid rgba(255,136,0,0.3);font-family:'Share Tech Mono',monospace;font-size:12px;color:var(--orange);display:none">
-      ⚠ Sign in to YouTube first (YouTube tab) — uploads use your Google account to save files to Drive
-    </div>
-
-    <!-- Story selector — links upload to correct story -->
-    <div class="panel" style="max-width:900px;margin-bottom:16px">
-      <div class="panel-title">① Link to Story</div>
-      <div style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap">
-        <div class="form-group" style="flex:1;min-width:200px">
-          <label>Which story are these files for?</label>
-          <select id="upload-story-select" onchange="onUploadStorySelect()">
-            <option value="">-- Select story first --</option>
-          </select>
-        </div>
-        <div id="upload-story-info" style="font-family:'Share Tech Mono',monospace;font-size:11px;color:var(--text-dim);padding-bottom:10px;display:none">
-          Row: <span id="upload-story-row" style="color:var(--accent)">—</span> &nbsp;|&nbsp;
-          Status: <span id="upload-story-status" style="color:var(--accent2)">—</span>
-        </div>
+  <div class="panel" style="max-width:900px;margin-bottom:14px">
+    <div class="panel-title">Story & Metadata</div>
+    <div class="form-grid">
+      <div class="form-group">
+        <label>Select Story</label>
+        <select id="yt-story-select" onchange="populateYouTube()"><option value="">-- Choose --</option></select>
+      </div>
+      <div class="form-group">
+        <label>Privacy</label>
+        <select id="yt-privacy"><option>Public</option><option>Unlisted</option><option selected>Private</option></select>
+      </div>
+      <div class="form-group full">
+        <label>YouTube Title <span style="color:var(--dim)">(max 100 chars — no emoji for safety)</span></label>
+        <input id="yt-title" maxlength="100" placeholder="Auto-generated" oninput="document.getElementById('yt-title-count').textContent=this.value.length">
+        <div class="char-count"><span id="yt-title-count">0</span>/100</div>
+      </div>
+      <div class="form-group full">
+        <label>Description</label>
+        <textarea id="yt-desc" style="min-height:150px"></textarea>
+      </div>
+      <div class="form-group full">
+        <label>Tags <span style="color:var(--dim)">(from story hashtags + auto)</span></label>
+        <textarea id="yt-tags" style="min-height:60px"></textarea>
+      </div>
+      <div class="form-group">
+        <label>Category</label>
+        <select id="yt-category">
+          <option value="24" selected>Entertainment</option>
+          <option value="27">Education</option>
+          <option value="1">Film & Animation</option>
+          <option value="22">People & Blogs</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Made for Kids</label>
+        <select id="yt-kids"><option value="true">Yes</option><option value="false">No</option></select>
+      </div>
+      <div class="form-group">
+        <label>Schedule (leave blank = immediate)</label>
+        <input type="datetime-local" id="yt-schedule">
+      </div>
+      <div class="form-group">
+        <label>Playlist ID (optional)</label>
+        <input id="yt-playlist" placeholder="PLxxxxxxxxxxxxxxx">
       </div>
     </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:4px">
+      <button class="btn-copy" onclick="copyField('yt-title','Title')">COPY TITLE</button>
+      <button class="btn-copy" onclick="copyField('yt-desc','Desc')">COPY DESC</button>
+      <button class="btn-copy" onclick="copyField('yt-tags','Tags')">COPY TAGS</button>
+    </div>
+  </div>
 
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;max-width:900px">
-
-      <!-- Thumbnail Upload -->
-      <div class="panel">
-        <div class="panel-title">② Thumbnail → Drive</div>
-        <div class="upload-zone" id="thumb-zone">
-          <input type="file" accept="image/*" onchange="handleThumb(this)">
-          <span class="upload-icon">🖼️</span>
-          <div class="upload-label">DROP IMAGE OR CLICK<br>PNG / JPG / WEBP</div>
-          <div class="upload-filename" id="thumb-name"></div>
-        </div>
-        <div id="thumb-preview-wrap" style="display:none;margin-top:10px">
-          <img id="thumb-preview" style="width:100%;border:1px solid var(--border)">
-        </div>
-        <div class="upload-progress-wrap" id="thumb-progress">
-          <div class="upload-stage"><div class="stage-indicator" id="ts1"></div>Reading file</div>
-          <div class="upload-stage"><div class="stage-indicator" id="ts2"></div>Uploading to Google Drive</div>
-          <div class="upload-stage"><div class="stage-indicator" id="ts3"></div>Making public & getting URL</div>
-          <div class="upload-stage"><div class="stage-indicator" id="ts4"></div>Saving URL to Sheet</div>
-          <div class="big-progress"><div class="big-progress-fill" id="thumb-bar"></div></div>
-        </div>
-        <div class="upload-result" id="thumb-url"></div>
-        <div style="margin-top:12px">
-          <button class="btn-primary" onclick="uploadThumbnail()" style="width:100%">⬡ UPLOAD THUMBNAIL</button>
-        </div>
-      </div>
-
-      <!-- Video Upload -->
-      <div class="panel">
-        <div class="panel-title">③ Video → Drive</div>
-        <div class="upload-zone" id="video-zone">
-          <input type="file" accept="video/*" onchange="handleVideo(this)">
-          <span class="upload-icon">🎬</span>
-          <div class="upload-label">DROP VIDEO OR CLICK<br>MP4 / MOV / AVI</div>
-          <div class="upload-filename" id="video-name"></div>
-        </div>
-        <div id="video-size-info" style="margin-top:8px;font-family:'Share Tech Mono',monospace;font-size:10px;color:var(--text-dim)"></div>
-        <div class="upload-progress-wrap" id="video-progress">
-          <div class="upload-stage"><div class="stage-indicator" id="vs1"></div>Reading file</div>
-          <div class="upload-stage"><div class="stage-indicator" id="vs2"></div>Uploading to Google Drive</div>
-          <div class="upload-stage"><div class="stage-indicator" id="vs3"></div>Making public & getting URL</div>
-          <div class="upload-stage"><div class="stage-indicator" id="vs4"></div>Saving URL to Sheet</div>
-          <div class="big-progress"><div class="big-progress-fill" id="video-bar"></div></div>
-          <div style="font-family:'Share Tech Mono',monospace;font-size:10px;color:var(--text-dim);margin-top:6px" id="video-upload-pct"></div>
-        </div>
-        <div class="upload-result" id="video-url"></div>
-        <div style="margin-top:12px">
-          <button class="btn-primary" onclick="uploadVideo()" style="width:100%">⬡ UPLOAD VIDEO</button>
-        </div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;max-width:900px;margin-bottom:14px">
+    <div class="panel">
+      <div class="panel-title">Video File</div>
+      <div class="upload-zone">
+        <input type="file" accept="video/*" onchange="handleYTVideo(this)">
+        <span class="upload-icon">🎬</span>
+        <div class="upload-label">SELECT VIDEO FILE<br>MP4 recommended</div>
+        <div class="upload-filename" id="yt-video-name"></div>
       </div>
     </div>
-
-    <div class="panel" style="max-width:900px;margin-top:16px">
-      <div class="panel-title">How This Works</div>
-      <div style="font-family:'Share Tech Mono',monospace;font-size:12px;line-height:2.2;color:var(--text-dim)">
-        <div>① Select which story these files belong to</div>
-        <div>② Upload thumbnail → saved to your Google Drive folder → URL saved to Sheet column K</div>
-        <div>③ Upload video → saved to your Google Drive folder → URL saved to Sheet column L</div>
-        <div>④ Go to YouTube tab → select same story → files are ready to post</div>
-        <div style="color:var(--orange);margin-top:8px">⚠ Must be signed in via YouTube tab for uploads to work</div>
-        <div style="color:var(--accent);margin-top:4px">✓ Uses your Google Drive API — real URLs, no CORS issues</div>
+    <div class="panel">
+      <div class="panel-title">Thumbnail</div>
+      <div class="upload-zone">
+        <input type="file" accept="image/*" onchange="handleYTThumb(this)">
+        <span class="upload-icon">🖼️</span>
+        <div class="upload-label">SELECT THUMBNAIL<br>JPG/PNG 1280×720</div>
+        <div class="upload-filename" id="yt-thumb-name"></div>
+      </div>
+      <div id="yt-thumb-preview-wrap" style="display:none;margin-top:10px">
+        <img id="yt-thumb-preview" style="width:100%;border:1px solid var(--border)">
       </div>
     </div>
   </div>
 
-  <!-- ══════════ SETTINGS PAGE ══════════ -->
-  <div class="page" id="page-settings">
-    <div class="panel" style="max-width:700px">
-      <div class="panel-title">Configuration</div>
-
-      <div class="form-group" style="margin-bottom:16px">
-        <label>Google Apps Script Web App URL</label>
-        <input id="cfg-url" placeholder="https://script.google.com/macros/s/YOUR_ID/exec" oninput="saveCfg()">
-        <div style="font-family:'Share Tech Mono',monospace;font-size:10px;color:var(--text-dim);margin-top:4px">
-          Deploy your Apps Script as Web App and paste URL here
-        </div>
-      </div>
-
-      <div class="form-group" style="margin-bottom:16px">
-        <label>Google Drive Folder ID</label>
-        <input id="cfg-folder" placeholder="e.g. 1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs" oninput="saveCfg()">
-        <div style="font-family:'Share Tech Mono',monospace;font-size:10px;color:var(--text-dim);margin-top:4px">
-          From your Drive folder URL: drive.google.com/drive/folders/[THIS_PART]
-        </div>
-      </div>
-
-      <div class="form-group" style="margin-bottom:20px">
-        <label>Channel Name (for display)</label>
-        <input id="cfg-channel" placeholder="e.g. StoryTime Kids" oninput="saveCfg()">
-      </div>
-
-      <button class="btn-primary" onclick="loadData();notify('✅ Settings saved & data refreshed')">SAVE & REFRESH</button>
-
-      <div style="margin-top:24px;padding:16px;background:var(--bg2);border:1px solid var(--border)">
-        <div class="panel-title" style="margin-bottom:12px">📋 Setup Checklist</div>
-        <div style="font-family:'Share Tech Mono',monospace;font-size:12px;line-height:2.2;color:var(--text-dim)">
-          <div>☐ Open Google Sheet → Extensions → Apps Script</div>
-          <div>☐ Paste AppScript_Setup.gs content</div>
-          <div>☐ Run <span style="color:var(--accent)">setupAll()</span> function once</div>
-          <div>☐ Deploy → New Deployment → Web App</div>
-          <div>☐ Set access: <span style="color:var(--accent)">Anyone</span></div>
-          <div>☐ Copy Web App URL → paste above</div>
-          <div>☐ Create Drive folder → copy folder ID → paste above</div>
-          <div>☐ Host this HTML on GitHub Pages</div>
-        </div>
-      </div>
-
-      <div style="margin-top:16px;padding:16px;background:var(--bg2);border:1px solid var(--border)">
-        <div class="panel-title" style="margin-bottom:12px">🚀 GitHub Pages Setup</div>
-        <div style="font-family:'Share Tech Mono',monospace;font-size:12px;line-height:2.2;color:var(--text-dim)">
-          <div>1. Create GitHub account (free)</div>
-          <div>2. New repo: e.g. <span style="color:var(--accent)">storyforge-dashboard</span></div>
-          <div>3. Upload this HTML file as <span style="color:var(--accent)">index.html</span></div>
-          <div>4. Settings → Pages → Branch: main → Save</div>
-          <div>5. Your URL: <span style="color:var(--accent2)">yourname.github.io/storyforge-dashboard</span></div>
-        </div>
-      </div>
+  <div class="panel" style="max-width:900px">
+    <div class="panel-title">Upload to YouTube</div>
+    <div id="yt-upload-stages" style="display:none;margin-bottom:14px">
+      <div class="upload-stage" style="margin-bottom:8px"><div class="stage-indicator" id="yts1"></div>Preparing metadata</div>
+      <div class="upload-stage" style="margin-bottom:8px"><div class="stage-indicator" id="yts2"></div>Uploading video</div>
+      <div class="upload-stage" style="margin-bottom:8px"><div class="stage-indicator" id="yts3"></div>Setting thumbnail</div>
+      <div class="upload-stage" style="margin-bottom:8px"><div class="stage-indicator" id="yts4"></div>Saving to Sheet</div>
+      <div class="big-progress"><div class="big-progress-fill" id="yt-upload-bar"></div></div>
+      <div style="font-family:'Share Tech Mono',monospace;font-size:10px;color:var(--dim);margin-top:6px" id="yt-upload-pct">0%</div>
+    </div>
+    <div id="yt-upload-result" style="display:none;padding:12px;background:rgba(0,255,136,.05);border:1px solid rgba(0,255,136,.2);font-family:'Share Tech Mono',monospace;font-size:11px;margin-bottom:14px">
+      <div style="color:var(--accent);margin-bottom:6px">✓ UPLOAD COMPLETE</div>
+      <div>Video ID: <span id="yt-result-id" style="color:var(--accent2)">—</span></div>
+      <div>URL: <a id="yt-result-url" href="#" target="_blank" style="color:var(--accent2)">—</a></div>
+    </div>
+    <div id="yt-upload-error" style="display:none;padding:12px;background:rgba(255,0,85,.05);border:1px solid rgba(255,0,85,.2);font-family:'Share Tech Mono',monospace;font-size:11px;color:var(--accent3);margin-bottom:14px"></div>
+    <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
+      <button class="btn-danger" onclick="uploadToYouTube()" id="yt-upload-btn">▶ PUBLISH TO YOUTUBE</button>
+      <label style="display:flex;align-items:center;gap:6px;text-transform:none;letter-spacing:0;font-size:12px;cursor:pointer">
+        <input type="checkbox" id="yt-auto-trigger" style="width:auto;accent-color:var(--accent)">
+        Auto-publish when Approved
+      </label>
     </div>
   </div>
+</div>
+
+<!-- ════════════ ADD STORY MODAL ════════════ -->
+<div class="modal-overlay" id="add-story-modal">
+  <div class="modal" style="max-width:700px">
+    <button class="modal-close" onclick="closeAddStory()">✕</button>
+    <div style="font-family:'Orbitron',monospace;font-size:13px;color:var(--accent);letter-spacing:3px;margin-bottom:20px">+ ADD NEW STORY</div>
+    <div class="form-grid">
+      <div class="form-group">
+        <label>Theme</label>
+        <select id="f-theme">
+          <option>Adventure</option><option>Friendship</option><option>Magic</option>
+          <option>Kindness</option><option>Courage</option><option>Family</option>
+          <option>Nature</option><option>Honesty</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Status</label>
+        <select id="f-status">
+          <option>Generated</option><option>Storyboarded</option><option>Ready</option>
+        </select>
+      </div>
+      <div class="form-group full">
+        <label>Story Title</label>
+        <input id="f-title" placeholder="e.g. Luna and the Lost Star" maxlength="120">
+      </div>
+      <div class="form-group full">
+        <label>Hashtags <span style="color:var(--dim)">(used for YouTube tags — e.g. #kidsstory #adventure)</span></label>
+        <input id="f-hashtags" placeholder="#kidsstory #bedtimestory #animation">
+      </div>
+      <div class="form-group full">
+        <label>Story Text</label>
+        <textarea id="f-story" style="min-height:140px" oninput="updateCount(this,'f-story-count')"></textarea>
+        <div class="char-count"><span id="f-story-count">0</span> words</div>
+      </div>
+      <div class="form-group full">
+        <label>Moral / Lesson</label>
+        <textarea id="f-moral" style="min-height:60px"></textarea>
+      </div>
+    </div>
+    <div style="display:flex;gap:10px;align-items:center">
+      <button class="btn-primary" onclick="submitStory()">⬡ SAVE TO SHEET</button>
+      <button class="btn-secondary" onclick="clearForm()">CLEAR</button>
+      <span id="submit-msg" style="font-family:'Share Tech Mono',monospace;font-size:10px;color:var(--accent)"></span>
+    </div>
+  </div>
+</div>
 
 </main>
 
-<!-- Notification toast -->
+<!-- ── SETTINGS DRAWER ── -->
+<div class="settings-overlay" id="settings-overlay" onclick="closeSettings()"></div>
+<div class="settings-modal" id="settings-modal">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px">
+    <span style="font-family:'Orbitron',monospace;font-size:12px;color:var(--accent);letter-spacing:3px">⚙ SETTINGS</span>
+    <button class="modal-close" style="position:static" onclick="closeSettings()">✕</button>
+  </div>
+  <div class="form-group" style="margin-bottom:14px">
+    <label>Google Apps Script URL</label>
+    <input id="cfg-url" placeholder="https://script.google.com/macros/s/..." oninput="saveCfg()">
+  </div>
+  <div class="form-group" style="margin-bottom:14px">
+    <label>Google Drive Folder ID</label>
+    <input id="cfg-folder" placeholder="1BxiMVs0XRA..." oninput="saveCfg()">
+  </div>
+  <div class="form-group" style="margin-bottom:20px">
+    <label>YouTube Playlist ID (default)</label>
+    <input id="cfg-playlist" placeholder="PLxxxxxxxxxxxxxxx" oninput="saveCfg()">
+  </div>
+  <button class="btn-primary" style="width:100%;margin-bottom:16px" onclick="loadData();closeSettings();notify('✅ Settings saved & refreshed')">SAVE & REFRESH</button>
+  <div style="padding:14px;background:var(--bg2);border:1px solid var(--border);font-family:'Share Tech Mono',monospace;font-size:10px;line-height:2;color:var(--dim)">
+    <div style="color:var(--accent);margin-bottom:6px">AUTO REFRESH</div>
+    <div>Data refreshes every <span style="color:var(--accent2)">5 minutes</span> automatically</div>
+    <div>Manual refresh: header REFRESH button</div>
+    <div style="margin-top:10px;color:var(--accent)">SETUP CHECKLIST</div>
+    <div>☐ Apps Script deployed as Web App</div>
+    <div>☐ Drive API enabled in Google Cloud</div>
+    <div>☐ YouTube API v3 enabled</div>
+    <div>☐ OAuth tester emails added</div>
+  </div>
+</div>
+
+<!-- ── NOTIFICATION ── -->
 <div class="notification" id="notif"></div>
 
 <script>
-// ── STATE ──────────────────────────────────────────────
+// ══════════════════════════════════════════════════
+// STATE
+// ══════════════════════════════════════════════════
 let allStories = [];
 let cfg = {};
+let donutChart = null;
+let autoRefreshTimer = null;
 
-// ── INIT ──────────────────────────────────────────────
+const STATUSES = ['Generated','Storyboarded','Ready','Review','Approved','Published'];
+const STATUS_COLORS = {
+  Generated:'var(--accent)', Storyboarded:'var(--accent2)', Ready:'var(--orange)',
+  Review:'var(--purple)', Approved:'var(--yellow)', Published:'#88ff00'
+};
+const STATUS_HEX = {
+  Generated:'#00ff88', Storyboarded:'#00ccff', Ready:'#ff8800',
+  Review:'#aa44ff', Approved:'#ffdd00', Published:'#88ff00'
+};
+
+// ══════════════════════════════════════════════════
+// INIT
+// ══════════════════════════════════════════════════
 document.addEventListener('DOMContentLoaded', () => {
   loadConfig();
   loadData();
   startClock();
   initGoogleAuth();
+  startAutoRefresh();
 });
 
 function loadConfig() {
-  try {
-    cfg = JSON.parse(localStorage.getItem('sf_config') || '{}');
-  } catch(e) { cfg = {}; }
+  try { cfg = JSON.parse(localStorage.getItem('sf_config') || '{}'); } catch(e) { cfg = {}; }
   if (cfg.url) document.getElementById('cfg-url').value = cfg.url;
   if (cfg.folder) document.getElementById('cfg-folder').value = cfg.folder;
-  if (cfg.channel) document.getElementById('cfg-channel').value = cfg.channel;
+  if (cfg.playlist) document.getElementById('cfg-playlist').value = cfg.playlist;
 }
 
 function saveCfg() {
   cfg.url = document.getElementById('cfg-url').value.trim();
   cfg.folder = document.getElementById('cfg-folder').value.trim();
-  cfg.channel = document.getElementById('cfg-channel').value.trim();
+  cfg.playlist = document.getElementById('cfg-playlist').value.trim();
   localStorage.setItem('sf_config', JSON.stringify(cfg));
 }
 
-// ── CLOCK ──────────────────────────────────────────────
-function startClock() {
-  function tick() {
-    document.getElementById('clock').textContent = new Date().toLocaleTimeString('en-US', {hour12: false});
-  }
-  tick();
-  setInterval(tick, 1000);
+function startAutoRefresh() {
+  if (autoRefreshTimer) clearInterval(autoRefreshTimer);
+  autoRefreshTimer = setInterval(() => {
+    loadData(true);
+  }, 5 * 60 * 1000); // every 5 minutes
 }
 
-// ── DATA LOADING ──────────────────────────────────────────────
-async function loadData() {
-  const url = cfg.url || document.getElementById('cfg-url')?.value?.trim();
+function manualRefresh() {
+  loadData();
+  notify('⟳ Refreshing data...');
+}
+
+function startClock() {
+  const tick = () => document.getElementById('clock').textContent = new Date().toLocaleTimeString('en-US',{hour12:false});
+  tick(); setInterval(tick, 1000);
+}
+
+// ══════════════════════════════════════════════════
+// DATA
+// ══════════════════════════════════════════════════
+async function loadData(silent = false) {
+  const url = cfg.url;
+  const statusEl = document.getElementById('refresh-status');
 
   if (!url) {
-    // Use sample data for demo
     allStories = [
-      {Theme:'Adventure', Title:'Max and the Rainbow Cave', 'Story Text': 'Max the squirrel found a shiny key under a big oak tree and wondered what it could open. He followed tiny golden arrows on the ground that led him through the forest, across a wobbly log bridge, and up a rocky hill. At the top, he discovered a hidden cave with rainbow walls that glowed brighter when he stepped inside. Using the key, Max opened a small chest that held a note saying, "The real treasure is your brave and curious heart."', Moral:'True adventure is about being curious and brave, not just finding treasure.', Date:'04-03-26', Time:'10:08 PM', Status:'Storyboarded', 'Word Count':87},
-      {Theme:'Friendship', Title:'Nia and the Two-Bucket Team', 'Story Text': 'Nia the young elephant wanted to fill the watering hole, but her bucket was too small. A busy meerkat named Toma offered his tiny bucket, and together they made many quick trips. When they finished, the other animals cheered and splashed happily. Nia and Toma laughed because they knew it was easier as a team.', Moral:'Good friends help each other, and teamwork makes hard jobs smaller.', Date:'04-03-26', Time:'9:23 PM', Status:'Generated', 'Word Count':61},
-      {Theme:'Magic', Title:"Milo's Magic Paintbrush", 'Story Text': "Milo found a tiny paintbrush that sparkled in the moonlight. When he painted a blue door on his bedroom wall, it opened into a quiet garden full of butterflies. He painted a ladder to help a stuck kitten climb down from a tree, and the kitten purred happily. Before bed, Milo painted the brush a safe little box so it wouldn't get lost.", Moral:'Use your special gifts to help others, not just yourself.', Date:'04-03-26', Time:'9:23 PM', Status:'Generated', 'Word Count':72},
+      {Theme:'Adventure',Title:'Max and the Rainbow Cave','Story Text':'Max the squirrel found a shiny key under a big oak tree. He followed tiny golden arrows through the forest, across a wobbly log bridge, and up a rocky hill. At the top, he discovered a hidden cave with rainbow walls. The chest held a note: "The real treasure is your brave and curious heart."',Moral:'True adventure is about curiosity and bravery.',Hashtags:'#kidsstory #adventure #bravery',Date:'03/04/2026 10:08 PM',Status:'Storyboarded','Word Count':72},
+      {Theme:'Friendship',Title:'Nia and the Two-Bucket Team','Story Text':'Nia the young elephant wanted to fill the watering hole, but her bucket was too small. A meerkat named Toma offered his tiny bucket. Together they made many trips. When they finished, all the animals cheered.',Moral:'Teamwork makes hard jobs smaller.',Hashtags:'#kidsstory #friendship #teamwork',Date:'03/04/2026 9:23 PM',Status:'Generated','Word Count':55},
+      {Theme:'Magic',Title:"Milo's Magic Paintbrush",'Story Text':"Milo found a paintbrush that sparkled in moonlight. He painted a door that opened into a garden of butterflies. He painted a ladder to help a stuck kitten. Before bed, he painted the brush a safe little box.",Moral:'Use your gifts to help others.',Hashtags:'#kidsstory #magic #kindness',Date:'03/04/2026 9:23 PM',Status:'Ready','Word Count':60},
     ];
     renderAll();
-    document.getElementById('last-refresh').textContent = '⟳ Demo mode — configure URL in Settings';
+    statusEl.textContent = '⟳ Demo mode — add Script URL in ⚙';
     return;
   }
 
+  if (!silent) statusEl.textContent = '⟳ Fetching...';
   try {
-    document.getElementById('last-refresh').textContent = '⟳ Fetching from Google Sheets...';
     const res = await fetch(`${url}?action=getStories`);
     const data = await res.json();
     allStories = data.stories || [];
     renderAll();
-    document.getElementById('last-refresh').textContent = `✓ Refreshed at ${new Date().toLocaleTimeString()}`;
-    notify('✅ Data loaded from Google Sheets');
+    statusEl.textContent = `✓ ${new Date().toLocaleTimeString()}`;
+    if (!silent) notify('✅ Data refreshed');
   } catch(e) {
-    document.getElementById('last-refresh').textContent = '⚠ Could not connect — showing local data';
+    statusEl.textContent = '⚠ Connection failed';
+    if (!silent) notify('⚠ Could not connect to Sheet', true);
     renderAll();
   }
 }
@@ -1242,146 +703,184 @@ function renderAll() {
   renderPipeline();
   renderStatusBars();
   renderThemeBars();
+  renderDonutChart();
   renderStoryTable(allStories);
+  renderReview();
   populateFilters();
   populateYTSelect();
   populateUploadSelect();
   document.getElementById('story-count-header').textContent = `${allStories.length} STORIES`;
 }
 
-// ── KPIs ──────────────────────────────────────────────
+// ══════════════════════════════════════════════════
+// KPIs
+// ══════════════════════════════════════════════════
 function renderKPIs() {
   const total = allStories.length;
-  const totalWords = allStories.reduce((s, r) => s + (parseInt(r['Word Count']) || wordCount(r['Story Text'])), 0);
-  const avg = total ? Math.round(totalWords / total) : 0;
-  const published = allStories.filter(r => r.Status === 'Published').length;
-
+  const totalWords = allStories.reduce((s,r) => s + (parseInt(r['Word Count']) || wc(r['Story Text'])), 0);
+  const avg = total ? Math.round(totalWords/total) : 0;
+  const published = allStories.filter(r => r.Status==='Published').length;
+  const remaining = total - published;
   animCount('kpi-total', total);
   animCount('kpi-words', totalWords);
   animCount('kpi-avg', avg);
   animCount('kpi-published', published);
+  animCount('kpi-remaining', remaining);
 }
 
-function wordCount(text) {
+function wc(text) {
   if (!text) return 0;
   return text.trim().split(/\s+/).filter(Boolean).length;
 }
 
 function animCount(id, target) {
   const el = document.getElementById(id);
-  const start = 0;
-  const dur = 800;
-  const t0 = performance.now();
-  function step(now) {
-    const p = Math.min((now - t0) / dur, 1);
-    el.textContent = Math.round(start + (target - start) * easeOut(p)).toLocaleString();
+  if (!el) return;
+  const dur = 700, t0 = performance.now();
+  const step = now => {
+    const p = Math.min((now-t0)/dur, 1);
+    el.textContent = Math.round(target * (1-Math.pow(1-p,3))).toLocaleString();
     if (p < 1) requestAnimationFrame(step);
-  }
+  };
   requestAnimationFrame(step);
 }
 
-function easeOut(t) { return 1 - Math.pow(1 - t, 3); }
-
-// ── PIPELINE ──────────────────────────────────────────────
+// ══════════════════════════════════════════════════
+// PIPELINE
+// ══════════════════════════════════════════════════
 function renderPipeline() {
-  const statuses = ['Generated', 'Storyboarded', 'Recorded', 'Uploaded', 'Published'];
-  statuses.forEach(s => {
-    const count = allStories.filter(r => r.Status === s).length;
-    const el = document.getElementById('n-' + s.toLowerCase());
-    if (el) el.textContent = count;
-    const pipe = document.getElementById('pipe-' + s.toLowerCase());
-    if (pipe) pipe.classList.toggle('active', count > 0);
+  STATUSES.forEach(s => {
+    const cnt = allStories.filter(r => r.Status===s).length;
+    const el = document.getElementById('n-'+s.toLowerCase());
+    if (el) el.textContent = cnt;
+    const pipe = document.getElementById('pipe-'+s.toLowerCase());
+    if (pipe) pipe.classList.toggle('active', cnt > 0);
   });
 }
 
-// ── BARS ──────────────────────────────────────────────
-const statusColors = {
-  Generated: 'var(--accent)', Storyboarded: 'var(--accent2)',
-  Recorded: 'var(--orange)', Uploaded: 'var(--purple)', Published: '#88ff00'
-};
-
+// ══════════════════════════════════════════════════
+// STATUS BARS
+// ══════════════════════════════════════════════════
 function renderStatusBars() {
-  const container = document.getElementById('status-bars');
-  const statuses = Object.keys(statusColors);
+  const c = document.getElementById('status-bars');
   const total = allStories.length || 1;
-  container.innerHTML = statuses.map(s => {
-    const cnt = allStories.filter(r => r.Status === s).length;
-    const pct = Math.round(cnt / total * 100);
+  c.innerHTML = STATUSES.map(s => {
+    const cnt = allStories.filter(r => r.Status===s).length;
+    const pct = Math.round(cnt/total*100);
     return `<div class="progress-item">
       <div class="progress-header">
-        <span class="progress-label" style="color:${statusColors[s]}">${s}</span>
-        <span class="progress-count">${cnt} <span style="color:var(--text-dim)">(${pct}%)</span></span>
+        <span class="progress-label" style="color:${STATUS_COLORS[s]}">${s}</span>
+        <span class="progress-count">${cnt} <span style="color:var(--dim)">(${pct}%)</span></span>
       </div>
-      <div class="progress-bar"><div class="progress-fill" style="width:0%;background:${statusColors[s]}" data-w="${pct}"></div></div>
+      <div class="progress-bar"><div class="progress-fill" style="width:0%;background:${STATUS_COLORS[s]}" data-w="${pct}"></div></div>
     </div>`;
   }).join('');
-  setTimeout(() => {
-    container.querySelectorAll('.progress-fill').forEach(el => {
-      el.style.width = el.dataset.w + '%';
-    });
-  }, 100);
+  setTimeout(() => c.querySelectorAll('.progress-fill').forEach(el => el.style.width = el.dataset.w+'%'), 80);
 }
 
 function renderThemeBars() {
-  const container = document.getElementById('theme-bars');
+  const c = document.getElementById('theme-bars');
   const themes = {};
-  allStories.forEach(r => { themes[r.Theme] = (themes[r.Theme] || 0) + 1; });
-  const max = Math.max(...Object.values(themes), 1);
-  const themeColorList = ['var(--accent2)', 'var(--purple)', 'var(--orange)', 'var(--accent3)', 'var(--accent)'];
-  container.innerHTML = Object.entries(themes).map(([theme, cnt], i) => {
-    const pct = Math.round(cnt / max * 100);
-    const color = themeColorList[i % themeColorList.length];
+  allStories.forEach(r => themes[r.Theme] = (themes[r.Theme]||0)+1);
+  const max = Math.max(...Object.values(themes),1);
+  const cols = [STATUS_COLORS.Storyboarded, STATUS_COLORS.Review, STATUS_COLORS.Ready, STATUS_COLORS.Generated, STATUS_COLORS.Published];
+  c.innerHTML = Object.entries(themes).map(([t,cnt],i) => {
+    const pct = Math.round(cnt/max*100);
     return `<div class="progress-item">
       <div class="progress-header">
-        <span class="progress-label" style="color:${color}">${theme}</span>
+        <span class="progress-label" style="color:${cols[i%cols.length]}">${t}</span>
         <span class="progress-count">${cnt}</span>
       </div>
-      <div class="progress-bar"><div class="progress-fill" style="width:0%;background:${color}" data-w="${pct}"></div></div>
+      <div class="progress-bar"><div class="progress-fill" style="width:0%;background:${cols[i%cols.length]}" data-w="${pct}"></div></div>
     </div>`;
-  }).join('') || '<div style="color:var(--text-dim);font-size:12px">No data</div>';
-  setTimeout(() => {
-    container.querySelectorAll('.progress-fill').forEach(el => {
-      el.style.width = el.dataset.w + '%';
-    });
-  }, 100);
+  }).join('') || '<div style="color:var(--dim);font-size:11px">No data</div>';
+  setTimeout(() => c.querySelectorAll('.progress-fill').forEach(el => el.style.width = el.dataset.w+'%'), 80);
 }
 
-// ── STORY TABLE ──────────────────────────────────────────────
+// ══════════════════════════════════════════════════
+// DONUT CHART
+// ══════════════════════════════════════════════════
+function renderDonutChart() {
+  const ctx = document.getElementById('donut-chart').getContext('2d');
+  const labels = STATUSES;
+  const data = labels.map(s => allStories.filter(r => r.Status===s).length);
+  const colors = labels.map(s => STATUS_HEX[s]);
+
+  if (donutChart) donutChart.destroy();
+  donutChart = new Chart(ctx, {
+    type: 'doughnut',
+    data: { labels, datasets: [{ data, backgroundColor: colors.map(c => c+'44'), borderColor: colors, borderWidth: 2 }] },
+    options: {
+      responsive: true, maintainAspectRatio: true, cutout: '65%',
+      plugins: {
+        legend: { display: false },
+        tooltip: { callbacks: { label: ctx => ` ${ctx.label}: ${ctx.parsed}` } }
+      }
+    }
+  });
+
+  // Legend
+  const leg = document.getElementById('donut-legend');
+  leg.innerHTML = labels.map((l,i) => data[i] > 0
+    ? `<div style="display:flex;align-items:center;gap:6px"><span style="width:8px;height:8px;border-radius:50%;background:${colors[i]};display:inline-block"></span><span style="color:${colors[i]}">${l}: ${data[i]}</span></div>`
+    : ''
+  ).join('');
+}
+
+// ══════════════════════════════════════════════════
+// STORY TABLE
+// ══════════════════════════════════════════════════
 function renderStoryTable(stories) {
   const tbody = document.getElementById('story-table-body');
   if (!stories.length) {
-    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--text-dim);padding:40px">No stories found</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--dim);padding:30px">No stories found</td></tr>';
     return;
   }
-  tbody.innerHTML = stories.map((s, i) => {
-    const wc = parseInt(s['Word Count']) || wordCount(s['Story Text']);
-    const badge = s.Status ? `<span class="badge badge-${s.Status.toLowerCase()}">${s.Status}</span>` : '';
+  tbody.innerHTML = stories.map((s,i) => {
+    const realIdx = allStories.indexOf(s);
+    const words = parseInt(s['Word Count']) || wc(s['Story Text']);
+    const statusKey = (s.Status||'').toLowerCase().replace(/\s/g,'');
+    const badge = `<span class="badge badge-${statusKey}">${s.Status||'—'}</span>`;
     return `<tr>
-      <td><span class="theme-tag">${s.Theme || '—'}</span></td>
-      <td>
-        <div class="story-title">${s.Title || '—'}</div>
-        <div class="story-text-preview">${s['Story Text'] || ''}</div>
-      </td>
-      <td style="max-width:200px;font-size:12px;color:var(--text-dim);line-height:1.4">${s.Moral || '—'}</td>
-      <td style="font-family:'Share Tech Mono',monospace;color:var(--accent2);text-align:center">${wc}</td>
-      <td style="font-family:'Share Tech Mono',monospace;font-size:11px;color:var(--text-dim);white-space:nowrap">${s.Date || ''}</td>
+      <td style="font-family:'Share Tech Mono',monospace;color:var(--dim);font-size:10px">${realIdx+1}</td>
+      <td><span class="theme-tag">${s.Theme||'—'}</span></td>
+      <td><div class="story-title">${s.Title||'—'}</div><div class="story-preview">${s['Story Text']||''}</div></td>
+      <td style="max-width:180px;font-size:11px;color:var(--dim);line-height:1.4">${s.Moral||'—'}</td>
+      <td style="font-family:'Share Tech Mono',monospace;color:var(--accent2);text-align:center">${words}</td>
+      <td style="font-family:'Share Tech Mono',monospace;font-size:9px;color:var(--dim);white-space:nowrap">${s.Date||''}</td>
       <td>${badge}</td>
-      <td>
-        <button class="btn-copy" onclick="copyStory(${i})">COPY</button>
+      <td style="white-space:nowrap">
+        <button class="btn-copy" onclick="copyStory(${realIdx})" style="margin-bottom:3px">COPY</button><br>
+        <button class="btn-copy" onclick="markStoryboarded(${realIdx})" style="color:var(--accent2);border-color:var(--accent2)">▶ STORYBOARD</button>
       </td>
     </tr>`;
   }).join('');
   document.getElementById('story-count-label').textContent = `Showing ${stories.length} of ${allStories.length} stories`;
 }
 
-function copyStory(i) {
+async function copyStory(i) {
   const s = allStories[i];
-  const text = `Title: ${s.Title}\n\nTheme: ${s.Theme}\n\nStory:\n${s['Story Text']}\n\nMoral: ${s.Moral}`;
-  navigator.clipboard.writeText(text);
-  notify('📋 Story copied to clipboard!');
+  const text = `Title: ${s.Title}\nTheme: ${s.Theme}\n\nStory:\n${s['Story Text']}\n\nMoral: ${s.Moral}\n\nHashtags: ${s.Hashtags||''}`;
+  await navigator.clipboard.writeText(text);
+  notify('📋 Story copied!');
 }
 
-// ── FILTERS ──────────────────────────────────────────────
+async function markStoryboarded(i) {
+  const s = allStories[i];
+  if (s.Status === 'Published') { notify('⚠ Already published'); return; }
+  s.Status = 'Storyboarded';
+  if (cfg.url) {
+    try {
+      await fetch(cfg.url, { method:'POST', body: JSON.stringify({ action:'updateStatus', storyRow: i+2, status:'Storyboarded' }) });
+    } catch(e) {}
+  }
+  renderAll();
+  notify(`🎨 "${s.Title}" → Storyboarded`);
+}
+
+// ══════════════════════════════════════════════════
+// FILTERS
+// ══════════════════════════════════════════════════
 function populateFilters() {
   const themes = [...new Set(allStories.map(s => s.Theme).filter(Boolean))];
   const sel = document.getElementById('filter-theme');
@@ -1393,23 +892,93 @@ function filterStories() {
   const status = document.getElementById('filter-status').value;
   const theme = document.getElementById('filter-theme').value;
   const filtered = allStories.filter(s => {
-    const matchQ = !q || (s.Title || '').toLowerCase().includes(q) || (s['Story Text'] || '').toLowerCase().includes(q);
-    const matchS = !status || s.Status === status;
-    const matchT = !theme || s.Theme === theme;
-    return matchQ && matchS && matchT;
+    const mq = !q || (s.Title||'').toLowerCase().includes(q) || (s['Story Text']||'').toLowerCase().includes(q);
+    const ms = !status || s.Status===status;
+    const mt = !theme || s.Theme===theme;
+    return mq && ms && mt;
   });
   renderStoryTable(filtered);
 }
 
-// ── FORM ──────────────────────────────────────────────
-function updateCount(el, countId) {
-  const wc = el.value.trim().split(/\s+/).filter(Boolean).length;
-  document.getElementById(countId).textContent = el.value.trim() ? wc : 0;
+// ══════════════════════════════════════════════════
+// REVIEW TAB
+// ══════════════════════════════════════════════════
+function renderReview() {
+  const filter = document.getElementById('review-filter')?.value || '';
+  const container = document.getElementById('review-container');
+  const stories = allStories.filter(s => !filter || s.Status===filter);
+
+  if (!stories.length) {
+    container.innerHTML = '<div style="color:var(--dim);font-family:\'Share Tech Mono\',monospace;font-size:11px;padding:20px;text-align:center">No stories in this filter</div>';
+    return;
+  }
+
+  container.innerHTML = stories.map((s, i) => {
+    const realIdx = allStories.indexOf(s);
+    const isApproved = s.Status === 'Approved';
+    return `<div class="review-card ${isApproved?'approved':''}" id="review-card-${realIdx}">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:8px">
+        <div style="display:flex;gap:8px;align-items:center">
+          <span style="font-family:'Share Tech Mono',monospace;font-size:10px;color:var(--dim)">#${realIdx+1}</span>
+          <span class="theme-tag">${s.Theme||'—'}</span>
+          <span class="badge badge-${(s.Status||'').toLowerCase().replace(/\s/g,'')}">${s.Status||'—'}</span>
+        </div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap">
+          ${!isApproved ? `<button class="btn-primary" onclick="approveStory(${realIdx})" style="padding:6px 16px;font-size:9px;background:var(--yellow);color:#000">✓ APPROVE</button>` : `<span style="font-family:'Share Tech Mono',monospace;font-size:10px;color:var(--yellow)">✓ APPROVED</span>`}
+          <button class="btn-copy" onclick="switchToPublish(${realIdx})">→ PUBLISH</button>
+        </div>
+      </div>
+      <div class="review-grid">
+        <div class="review-field"><div class="review-field-label">Title</div><div class="review-field-val" style="color:#fff;font-weight:600">${s.Title||'—'}</div></div>
+        <div class="review-field"><div class="review-field-label">Moral</div><div class="review-field-val">${s.Moral||'—'}</div></div>
+        <div class="review-field" style="grid-column:1/-1"><div class="review-field-label">Story Text</div><div class="review-field-val" style="max-height:80px">${s['Story Text']||'—'}</div></div>
+        <div class="review-field"><div class="review-field-label">Drive Thumbnail</div><div class="review-field-val">${s['Drive Thumbnail URL'] ? `<a href="${s['Drive Thumbnail URL']}" target="_blank" style="color:var(--accent2)">View Image</a>` : '<span style="color:var(--dim)">Not uploaded</span>'}</div></div>
+        <div class="review-field"><div class="review-field-label">Drive Video</div><div class="review-field-val">${s['Drive Video URL'] ? `<a href="${s['Drive Video URL']}" target="_blank" style="color:var(--accent2)">View Video</a>` : '<span style="color:var(--dim)">Not uploaded</span>'}</div></div>
+        <div class="review-field"><div class="review-field-label">Hashtags</div><div class="review-field-val" style="color:var(--accent)">${s.Hashtags||'—'}</div></div>
+        <div class="review-field"><div class="review-field-label">YouTube URL</div><div class="review-field-val">${s['YouTube URL'] ? `<a href="${s['YouTube URL']}" target="_blank" style="color:var(--accent2)">Watch</a>` : '<span style="color:var(--dim)">Not published</span>'}</div></div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+async function approveStory(i) {
+  allStories[i].Status = 'Approved';
+  if (cfg.url) {
+    try {
+      await fetch(cfg.url, { method:'POST', body: JSON.stringify({ action:'updateStatus', storyRow:i+2, status:'Approved' }) });
+    } catch(e) {}
+  }
+  renderAll();
+  notify(`✅ "${allStories[i].Title}" → Approved`);
+}
+
+function switchToPublish(i) {
+  switchTab('publish');
+  setTimeout(() => {
+    document.getElementById('yt-story-select').value = i;
+    populateYouTube();
+  }, 100);
+}
+
+// ══════════════════════════════════════════════════
+// ADD STORY MODAL
+// ══════════════════════════════════════════════════
+function openAddStory() {
+  document.getElementById('add-story-modal').classList.add('open');
+}
+
+function closeAddStory() {
+  document.getElementById('add-story-modal').classList.remove('open');
+}
+
+function updateCount(el, id) {
+  document.getElementById(id).textContent = el.value.trim() ? wc(el.value) : 0;
 }
 
 function clearForm() {
-  ['f-title','f-story','f-moral'].forEach(id => document.getElementById(id).value = '');
-  ['f-story-count','f-moral-count'].forEach(id => document.getElementById(id).textContent = '0');
+  ['f-title','f-story','f-moral','f-hashtags'].forEach(id => document.getElementById(id).value='');
+  document.getElementById('f-story-count').textContent = '0';
+  document.getElementById('submit-msg').textContent = '';
 }
 
 async function submitStory() {
@@ -1418,358 +987,148 @@ async function submitStory() {
     title: document.getElementById('f-title').value.trim(),
     storyText: document.getElementById('f-story').value.trim(),
     moral: document.getElementById('f-moral').value.trim(),
+    hashtags: document.getElementById('f-hashtags').value.trim(),
     status: document.getElementById('f-status').value,
   };
-  if (!data.title || !data.storyText) { notify('⚠ Title and Story Text required'); return; }
+  if (!data.title || !data.storyText) { notify('⚠ Title and Story Text required', true); return; }
 
-  const url = cfg.url;
-  if (url) {
+  if (cfg.url) {
     try {
-      await fetch(url, { method: 'POST', body: JSON.stringify(data) });
-      notify('✅ Story added to Google Sheet!');
-      clearForm();
-      setTimeout(loadData, 1000);
-    } catch(e) {
-      notify('⚠ Could not reach Google Sheets. Check Settings.');
-    }
+      await fetch(cfg.url, { method:'POST', body: JSON.stringify(data) });
+      notify('✅ Story saved to Sheet!');
+    } catch(e) { notify('⚠ Could not save to Sheet', true); }
   } else {
-    // Local demo add
-    data['Story Text'] = data.storyText;
-    data['Word Count'] = wordCount(data.storyText);
-    data.Status = data.status;
-    data.Title = data.title;
-    data.Moral = data.moral;
-    data.Theme = data.theme;
-    data.Date = new Date().toLocaleDateString('en-US', {month:'2-digit',day:'2-digit',year:'2-digit'}).replace(/\//g,'-');
-    allStories.unshift(data);
-    renderAll();
-    clearForm();
-    notify('✅ Story added (demo mode — set URL in Settings to save to Sheet)');
+    // Local demo
+    allStories.unshift({ Theme:data.theme, Title:data.title, 'Story Text':data.storyText,
+      Moral:data.moral, Hashtags:data.hashtags, Status:data.status,
+      'Word Count': wc(data.storyText),
+      Date: new Date().toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'}) });
+    notify('✅ Story added (demo)');
   }
+
+  clearForm();
+  closeAddStory();
+  setTimeout(loadData, 800);
 }
 
-// ── YOUTUBE OAUTH ──────────────────────────────────────────────
+// Fix header button to open modal
+document.querySelector('.hbtn[onclick*="add"]').onclick = function(){ openAddStory(); return false; };
+
+// ══════════════════════════════════════════════════
+// SETTINGS DRAWER
+// ══════════════════════════════════════════════════
+function openSettings() {
+  document.getElementById('settings-modal').classList.add('open');
+  document.getElementById('settings-overlay').classList.add('open');
+}
+function closeSettings() {
+  document.getElementById('settings-modal').classList.remove('open');
+  document.getElementById('settings-overlay').classList.remove('open');
+}
+
+// ══════════════════════════════════════════════════
+// TABS
+// ══════════════════════════════════════════════════
+function switchTab(id) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.getAttribute('onclick').includes(`'${id}'`)));
+  document.querySelectorAll('.page').forEach(p => p.classList.toggle('active', p.id === 'page-'+id));
+}
+
+// ══════════════════════════════════════════════════
+// YOUTUBE OAUTH
+// ══════════════════════════════════════════════════
 const YT_CLIENT_ID = '165516915479-27ks2km5q9sbod00uvsdmda3vfgf0toa.apps.googleusercontent.com';
 const YT_SCOPES = 'https://www.googleapis.com/auth/youtube.upload https://www.googleapis.com/auth/youtube https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/drive.file';
-
-let ytTokenClient = null;
-let ytAccessToken = null;
-let ytUserEmail = null;
-let ytVideoFile = null;
-let ytThumbFile = null;
+let ytTokenClient=null, ytAccessToken=null, ytUserEmail=null, ytVideoFile=null, ytThumbFile=null;
 
 function initGoogleAuth() {
   if (!window.google) { setTimeout(initGoogleAuth, 500); return; }
   ytTokenClient = google.accounts.oauth2.initTokenClient({
-    client_id: YT_CLIENT_ID,
-    scope: YT_SCOPES,
-    callback: onYTTokenReceived,
+    client_id: YT_CLIENT_ID, scope: YT_SCOPES, callback: onYTTokenReceived
   });
 }
 
 function ytSignIn() {
-  if (!ytTokenClient) { notify('⚠ Google auth still loading, try again'); initGoogleAuth(); return; }
+  if (!ytTokenClient) { initGoogleAuth(); setTimeout(ytSignIn,600); return; }
   ytTokenClient.requestAccessToken();
 }
 
 async function onYTTokenReceived(resp) {
-  if (resp.error) { notify('⚠ Sign-in failed: ' + resp.error); return; }
+  if (resp.error) { notify('⚠ Sign-in failed: '+resp.error, true); return; }
   ytAccessToken = resp.access_token;
-  // Get user email
   try {
-    const r = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
-      headers: { Authorization: 'Bearer ' + ytAccessToken }
-    });
+    const r = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', { headers:{'Authorization':'Bearer '+ytAccessToken} });
     const u = await r.json();
     ytUserEmail = u.email;
     document.getElementById('yt-user-email').textContent = ytUserEmail;
   } catch(e) {}
   document.getElementById('yt-auth-banner').style.display = 'none';
   document.getElementById('yt-auth-ok').style.display = 'flex';
-  notify('✅ Connected to YouTube as ' + (ytUserEmail || 'your account'));
+  notify('✅ Connected: ' + (ytUserEmail||'YouTube account'));
 }
 
 function ytSignOut() {
   if (ytAccessToken) google.accounts.oauth2.revoke(ytAccessToken);
   ytAccessToken = null;
-  ytUserEmail = null;
   document.getElementById('yt-auth-banner').style.display = 'flex';
   document.getElementById('yt-auth-ok').style.display = 'none';
-  notify('Signed out of YouTube');
+  notify('Signed out');
 }
 
-// ── YOUTUBE FILE HANDLERS ──────────────────────────────────────────────
-function handleYTVideo(input) {
-  ytVideoFile = input.files[0];
-  if (ytVideoFile) {
-    document.getElementById('yt-video-name').textContent = '📎 ' + ytVideoFile.name + ' (' + formatBytes(ytVideoFile.size) + ')';
-  }
-}
-
-function handleYTThumb(input) {
-  ytThumbFile = input.files[0];
-  if (ytThumbFile) {
-    document.getElementById('yt-thumb-name').textContent = '📎 ' + ytThumbFile.name;
-    const reader = new FileReader();
-    reader.onload = e => {
-      document.getElementById('yt-thumb-preview').src = e.target.result;
-      document.getElementById('yt-thumb-preview-wrap').style.display = 'block';
-    };
-    reader.readAsDataURL(ytThumbFile);
-  }
-}
-
-function formatBytes(b) {
-  if (b > 1e9) return (b/1e9).toFixed(1) + ' GB';
-  if (b > 1e6) return (b/1e6).toFixed(1) + ' MB';
-  return (b/1e3).toFixed(0) + ' KB';
-}
-
-// ── YOUTUBE UPLOAD ENGINE ──────────────────────────────────────────────
-async function uploadToYouTube() {
-  if (!ytAccessToken) { notify('⚠ Please sign in to YouTube first'); ytSignIn(); return; }
-  if (!ytVideoFile) { notify('⚠ Please select a video file'); return; }
-
-  const title = document.getElementById('yt-title').value.trim();
-  const desc  = document.getElementById('yt-desc').value.trim();
-  const tags  = document.getElementById('yt-tags').value.split(',').map(t => t.trim()).filter(Boolean);
-  const cat   = document.getElementById('yt-category').value;
-  const priv  = document.getElementById('yt-privacy').value.toUpperCase();
-  const kids  = document.getElementById('yt-kids').value === 'true';
-
-  if (!title) { notify('⚠ Please enter a YouTube title'); return; }
-
-  // Reset UI
-  document.getElementById('yt-upload-stages').style.display = 'block';
-  document.getElementById('yt-upload-result').style.display = 'none';
-  document.getElementById('yt-upload-error').style.display = 'none';
-  document.getElementById('yt-upload-btn').disabled = true;
-  ['yts1','yts2','yts3','yts4'].forEach(id => {
-    const el = document.getElementById(id);
-    el.className = 'stage-indicator';
-  });
-
-  const setStage = (n, state) => {
-    document.getElementById('yts'+n).className = 'stage-indicator ' + state;
-  };
-  const setBar = pct => {
-    document.getElementById('yt-upload-bar').style.width = pct + '%';
-    document.getElementById('yt-upload-pct').textContent = pct + '%';
-  };
-
-  try {
-    // Stage 1: Prepare
-    setStage(1,'active');
-    setBar(5);
-    await delay(400);
-    setStage(1,'done');
-    setBar(10);
-
-    // Stage 2: Upload video (resumable upload)
-    setStage(2,'active');
-    const videoId = await uploadVideoResumable(ytVideoFile, {
-      title, description: desc, tags,
-      categoryId: cat, privacyStatus: priv,
-      madeForKids: kids
-    }, (pct) => {
-      setBar(10 + Math.round(pct * 0.75)); // 10-85%
-    });
-
-    setStage(2,'done');
-    setBar(85);
-
-    // Stage 3: Set thumbnail
-    setStage(3,'active');
-    if (ytThumbFile) {
-      await uploadThumbnailToYT(videoId, ytThumbFile);
-      setStage(3,'done');
-    } else {
-      setStage(3,'done');
-    }
-    setBar(92);
-
-    // Stage 4: Save to sheet
-    setStage(4,'active');
-    const ytUrl = `https://www.youtube.com/watch?v=${videoId}`;
-    if (cfg.url) {
-      try {
-        await fetch(cfg.url, {
-          method: 'POST',
-          body: JSON.stringify({ action: 'saveYouTubeResult', videoId, youtubeUrl: ytUrl, storyTitle: title })
-        });
-      } catch(e) {}
-    }
-    setStage(4,'done');
-    setBar(100);
-
-    // Show result
-    document.getElementById('yt-result-id').textContent = videoId;
-    const linkEl = document.getElementById('yt-result-url');
-    linkEl.textContent = ytUrl;
-    linkEl.href = ytUrl;
-    document.getElementById('yt-upload-result').style.display = 'block';
-    notify('🎉 Video live on YouTube!');
-
-    // Auto-update story status in allStories
-    const idx = document.getElementById('yt-story-select').value;
-    if (idx !== '') {
-      allStories[idx].Status = 'Published';
-      allStories[idx]['YouTube URL'] = ytUrl;
-      allStories[idx]['Video ID'] = videoId;
-      renderAll();
-    }
-
-  } catch(err) {
-    const errEl = document.getElementById('yt-upload-error');
-    errEl.textContent = '⚠ Upload failed: ' + (err.message || err);
-    errEl.style.display = 'block';
-    notify('⚠ Upload failed — see error above');
-  } finally {
-    document.getElementById('yt-upload-btn').disabled = false;
-  }
-}
-
-async function uploadVideoResumable(file, meta, onProgress) {
-  // Step 1: Initiate resumable upload session
-  const initRes = await fetch(
-    'https://www.googleapis.com/upload/youtube/v3/videos?uploadType=resumable&part=snippet,status',
-    {
-      method: 'POST',
-      headers: {
-        'Authorization': 'Bearer ' + ytAccessToken,
-        'Content-Type': 'application/json',
-        'X-Upload-Content-Type': file.type,
-        'X-Upload-Content-Length': file.size,
-      },
-      body: JSON.stringify({
-        snippet: {
-          title: meta.title,
-          description: meta.description,
-          tags: meta.tags,
-          categoryId: meta.categoryId,
-        },
-        status: {
-          privacyStatus: meta.privacyStatus,
-          madeForKids: meta.madeForKids,
-        }
-      })
-    }
-  );
-
-  if (!initRes.ok) {
-    const err = await initRes.json();
-    throw new Error(err.error?.message || 'Failed to initiate upload');
-  }
-
-  const uploadUrl = initRes.headers.get('Location');
-  if (!uploadUrl) throw new Error('No upload URL returned from YouTube');
-
-  // Step 2: Upload file in chunks
-  const CHUNK = 5 * 1024 * 1024; // 5MB chunks
-  let offset = 0;
-
-  while (offset < file.size) {
-    const end = Math.min(offset + CHUNK, file.size);
-    const chunk = file.slice(offset, end);
-
-    const res = await fetch(uploadUrl, {
-      method: 'PUT',
-      headers: {
-        'Content-Range': `bytes ${offset}-${end-1}/${file.size}`,
-        'Content-Type': file.type,
-      },
-      body: chunk,
-    });
-
-    if (res.status === 308) {
-      // Incomplete — continue
-      const range = res.headers.get('Range');
-      offset = range ? parseInt(range.split('-')[1]) + 1 : end;
-      onProgress(offset / file.size);
-    } else if (res.status === 200 || res.status === 201) {
-      const data = await res.json();
-      onProgress(1);
-      return data.id;
-    } else {
-      const err = await res.json().catch(() => ({}));
-      throw new Error(err.error?.message || `Upload chunk failed (${res.status})`);
-    }
-  }
-  throw new Error('Upload ended without video ID');
-}
-
-async function uploadThumbnailToYT(videoId, thumbFile) {
-  const reader = new FileReader();
-  const thumbData = await new Promise((res, rej) => {
-    reader.onload = () => res(reader.result);
-    reader.onerror = rej;
-    reader.readAsArrayBuffer(thumbFile);
-  });
-
-  const res = await fetch(
-    `https://www.googleapis.com/upload/youtube/v3/thumbnails/set?videoId=${videoId}&uploadType=media`,
-    {
-      method: 'POST',
-      headers: {
-        'Authorization': 'Bearer ' + ytAccessToken,
-        'Content-Type': thumbFile.type,
-      },
-      body: thumbData,
-    }
-  );
-
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    console.warn('Thumbnail upload failed:', err.error?.message);
-    // Non-fatal — video still uploaded
-  }
-}
-
-// ── POPULATE YOUTUBE METADATA ──────────────────────────────────────────────
+// ══════════════════════════════════════════════════
+// YOUTUBE METADATA
+// ══════════════════════════════════════════════════
 function populateYTSelect() {
   const sel = document.getElementById('yt-story-select');
-  sel.innerHTML = '<option value="">-- Choose a story --</option>' +
-    allStories.map((s, i) => `<option value="${i}">${s.Title || 'Story ' + (i+1)}</option>`).join('');
+  sel.innerHTML = '<option value="">-- Choose --</option>' +
+    allStories.map((s,i) => `<option value="${i}">${s.Title||'Story '+(i+1)}</option>`).join('');
 }
 
 function populateYouTube() {
   const i = document.getElementById('yt-story-select').value;
-  if (i === '') return;
+  if (i==='') return;
   const s = allStories[i];
-  const title = `🌟 ${s.Title} | Bedtime Story for Kids`;
+
+  // Title — no emoji for safety (point 6)
+  const title = `${s.Title} | Bedtime Story for Kids | Bright Little Stories`;
   document.getElementById('yt-title').value = title;
   document.getElementById('yt-title-count').textContent = title.length;
+
+  // Build tags from hashtags column + defaults
+  const hashtagStr = s.Hashtags || '';
+  const hashTags = hashtagStr.split(/\s+|,/).map(h => h.replace(/^#/,'').trim()).filter(Boolean);
+  const defaultTags = ['kids story','bedtime story','children animation','moral story','animated story for kids','storytime'];
+  const allTags = [...new Set([...hashTags, ...defaultTags, (s.Theme||'').toLowerCase()+' story', (s.Title||'').toLowerCase()])];
+  document.getElementById('yt-tags').value = allTags.join(', ');
+
   document.getElementById('yt-desc').value =
-`📖 Story: ${s.Title}
+`${s.Title} | Bright Little Stories
 
-✨ Welcome to a magical bedtime story for children!
+${s['Story Text']||''}
 
-${s['Story Text'] || ''}
+Today's Lesson: ${s.Moral||''}
 
-🎯 Today's Lesson: ${s.Moral || ''}
+${hashtagStr}
 
 ─────────────────────────
-📌 SUBSCRIBE for new stories every week!
-👍 LIKE if your child enjoyed this story!
-🔔 Hit the BELL so you never miss a story!
+Subscribe for new stories every week!
+Like if your child enjoyed this story!
 ─────────────────────────
-#kidsstory #bedtimestory #childrenstories #animation #${(s.Theme||'').toLowerCase()}story #moralstory #educationalvideo`;
-
-  document.getElementById('yt-tags').value =
-    `kids story, bedtime story, children animation, ${(s.Theme||'').toLowerCase()} story, moral story, educational video for kids, animated story, ${(s.Title||'').toLowerCase()}, storytime, kids cartoon`;
+#kidsstory #bedtimestory #childrenstories #animation #brightlittlestories`;
 }
 
-// Auto-trigger: watch status changes
-function checkAutoTrigger(story) {
-  if (document.getElementById('yt-auto-trigger')?.checked && story.Status === 'Uploaded') {
-    switchTab('youtube');
-    const idx = allStories.findIndex(s => s.Title === story.Title);
-    if (idx >= 0) {
-      document.getElementById('yt-story-select').value = idx;
-      populateYouTube();
-      notify('⚡ Auto-trigger: Story ready to upload to YouTube!');
-    }
-  }
+function handleYTVideo(input) {
+  ytVideoFile = input.files[0];
+  if (ytVideoFile) document.getElementById('yt-video-name').textContent = '📎 ' + ytVideoFile.name + ' ('+formatBytes(ytVideoFile.size)+')';
+}
+
+function handleYTThumb(input) {
+  ytThumbFile = input.files[0];
+  if (!ytThumbFile) return;
+  document.getElementById('yt-thumb-name').textContent = '📎 ' + ytThumbFile.name;
+  const r = new FileReader();
+  r.onload = e => { document.getElementById('yt-thumb-preview').src = e.target.result; document.getElementById('yt-thumb-preview-wrap').style.display='block'; };
+  r.readAsDataURL(ytThumbFile);
 }
 
 function copyField(id, label) {
@@ -1777,264 +1136,312 @@ function copyField(id, label) {
   notify(`📋 ${label} copied!`);
 }
 
-function copyAllYT() {
-  const all = `TITLE:\n${document.getElementById('yt-title').value}\n\nDESCRIPTION:\n${document.getElementById('yt-desc').value}\n\nTAGS:\n${document.getElementById('yt-tags').value}`;
-  navigator.clipboard.writeText(all);
-  notify('📋 All YouTube metadata copied!');
+// ══════════════════════════════════════════════════
+// YOUTUBE UPLOAD
+// ══════════════════════════════════════════════════
+async function uploadToYouTube() {
+  if (!ytAccessToken) { notify('⚠ Sign in first', true); ytSignIn(); return; }
+  if (!ytVideoFile) { notify('⚠ Select a video file', true); return; }
+
+  const title = document.getElementById('yt-title').value.trim();
+  const desc  = document.getElementById('yt-desc').value.trim();
+  const tags  = document.getElementById('yt-tags').value.split(',').map(t=>t.trim()).filter(Boolean);
+  const cat   = document.getElementById('yt-category').value;
+  const priv  = document.getElementById('yt-privacy').value.toUpperCase();
+  const kids  = document.getElementById('yt-kids').value === 'true';
+  const schedVal = document.getElementById('yt-schedule').value;
+  const playlist = document.getElementById('yt-playlist').value.trim() || cfg.playlist;
+
+  if (!title) { notify('⚠ Enter a title', true); return; }
+
+  document.getElementById('yt-upload-stages').style.display='block';
+  document.getElementById('yt-upload-result').style.display='none';
+  document.getElementById('yt-upload-error').style.display='none';
+  document.getElementById('yt-upload-btn').disabled=true;
+  ['yts1','yts2','yts3','yts4'].forEach(id => document.getElementById(id).className='stage-indicator');
+
+  const setStage = (n,state) => document.getElementById('yts'+n).className='stage-indicator '+state;
+  const setBar = pct => { document.getElementById('yt-upload-bar').style.width=pct+'%'; document.getElementById('yt-upload-pct').textContent=pct+'%'; };
+
+  try {
+    setStage(1,'active'); setBar(5);
+    await delay(300);
+    setStage(1,'done'); setBar(10);
+
+    setStage(2,'active');
+    // If scheduled, use private + schedule
+    const privacyStatus = schedVal ? 'PRIVATE' : priv;
+    const videoId = await uploadVideoResumable(ytVideoFile, {
+      title, description:desc, tags, categoryId:cat,
+      privacyStatus, madeForKids:kids,
+      publishAt: schedVal ? new Date(schedVal).toISOString() : null
+    }, pct => setBar(10+Math.round(pct*70)));
+    setStage(2,'done'); setBar(82);
+
+    setStage(3,'active');
+    if (ytThumbFile) await uploadThumbnailToYT(videoId, ytThumbFile);
+    if (playlist) await addToPlaylist(videoId, playlist).catch(()=>{});
+    setStage(3,'done'); setBar(90);
+
+    setStage(4,'active');
+    const ytUrl = `https://www.youtube.com/watch?v=${videoId}`;
+    const storyIdx = document.getElementById('yt-story-select').value;
+    const storyRow = storyIdx!=='' ? parseInt(storyIdx)+2 : null;
+    if (cfg.url) {
+      try {
+        await fetch(cfg.url, { method:'POST', body: JSON.stringify({
+          action:'saveYouTubeResult', videoId, youtubeUrl:ytUrl,
+          storyTitle: storyIdx!=='' ? allStories[storyIdx]?.Title : title,
+          storyRow
+        })});
+      } catch(e) {}
+    }
+    setStage(4,'done'); setBar(100);
+
+    document.getElementById('yt-result-id').textContent = videoId;
+    const a = document.getElementById('yt-result-url');
+    a.textContent = ytUrl; a.href = ytUrl;
+    document.getElementById('yt-upload-result').style.display='block';
+
+    if (storyIdx!=='') {
+      allStories[storyIdx].Status = 'Published';
+      allStories[storyIdx]['YouTube URL'] = ytUrl;
+      renderAll();
+    }
+
+    // Reset form
+    ytVideoFile=null; ytThumbFile=null;
+    document.getElementById('yt-video-name').textContent='';
+    document.getElementById('yt-thumb-name').textContent='';
+    document.getElementById('yt-thumb-preview-wrap').style.display='none';
+
+    notify('🎉 Published to YouTube!');
+  } catch(err) {
+    const e = document.getElementById('yt-upload-error');
+    e.textContent = '⚠ '+err.message;
+    e.style.display='block';
+    notify('⚠ Upload failed', true);
+  } finally {
+    document.getElementById('yt-upload-btn').disabled=false;
+  }
 }
 
-// ── UPLOAD — Real Google Drive API ──────────────────────────────────────────────
-let thumbFile = null, videoFile = null;
-let uploadStoryIndex = null;
+async function uploadVideoResumable(file, meta, onProgress) {
+  const body = { snippet:{ title:meta.title, description:meta.description, tags:meta.tags, categoryId:meta.categoryId }, status:{ privacyStatus:meta.privacyStatus, madeForKids:meta.madeForKids } };
+  if (meta.publishAt) body.status.publishAt = meta.publishAt;
+
+  const initRes = await fetch('https://www.googleapis.com/upload/youtube/v3/videos?uploadType=resumable&part=snippet,status', {
+    method:'POST',
+    headers:{ 'Authorization':'Bearer '+ytAccessToken, 'Content-Type':'application/json', 'X-Upload-Content-Type':file.type, 'X-Upload-Content-Length':file.size },
+    body: JSON.stringify(body)
+  });
+  if (!initRes.ok) { const e=await initRes.json().catch(()=>{}); throw new Error(e?.error?.message||'Upload init failed'); }
+  const uploadUrl = initRes.headers.get('Location');
+  if (!uploadUrl) throw new Error('No upload URL returned');
+
+  const CHUNK = 5*1024*1024;
+  let offset=0;
+  while (offset < file.size) {
+    const end = Math.min(offset+CHUNK, file.size);
+    const res = await fetch(uploadUrl, { method:'PUT', headers:{ 'Content-Range':`bytes ${offset}-${end-1}/${file.size}`, 'Content-Type':file.type }, body:file.slice(offset,end) });
+    if (res.status===308) { const r=res.headers.get('Range'); offset=r?parseInt(r.split('-')[1])+1:end; onProgress(offset/file.size); }
+    else if (res.status===200||res.status===201) { const d=await res.json(); onProgress(1); return d.id; }
+    else { const e=await res.json().catch(()=>{}); throw new Error(e?.error?.message||`Chunk failed (${res.status})`); }
+  }
+  throw new Error('Upload ended without ID');
+}
+
+async function uploadThumbnailToYT(videoId, file) {
+  const buf = await file.arrayBuffer();
+  const res = await fetch(`https://www.googleapis.com/upload/youtube/v3/thumbnails/set?videoId=${videoId}&uploadType=media`, {
+    method:'POST', headers:{ 'Authorization':'Bearer '+ytAccessToken, 'Content-Type':file.type }, body:buf
+  });
+  if (!res.ok) console.warn('Thumbnail set failed');
+}
+
+async function addToPlaylist(videoId, playlistId) {
+  await fetch('https://www.googleapis.com/youtube/v3/playlistItems?part=snippet', {
+    method:'POST',
+    headers:{ 'Authorization':'Bearer '+ytAccessToken, 'Content-Type':'application/json' },
+    body: JSON.stringify({ snippet:{ playlistId, resourceId:{ kind:'youtube#video', videoId } } })
+  });
+}
+
+// ══════════════════════════════════════════════════
+// DRIVE UPLOAD
+// ══════════════════════════════════════════════════
+let thumbFile=null, videoFile=null, uploadStoryIndex=null;
 
 function populateUploadSelect() {
   const sel = document.getElementById('upload-story-select');
   if (!sel) return;
   sel.innerHTML = '<option value="">-- Select story first --</option>' +
-    allStories.map((s, i) => `<option value="${i}">${s.Title || 'Story ' + (i+1)}</option>`).join('');
+    allStories.map((s,i) => `<option value="${i}">${s.Title||'Story '+(i+1)}</option>`).join('');
 }
 
 function onUploadStorySelect() {
   const i = document.getElementById('upload-story-select').value;
-  uploadStoryIndex = i === '' ? null : parseInt(i);
-  const infoEl = document.getElementById('upload-story-info');
-  if (uploadStoryIndex !== null) {
-    const s = allStories[uploadStoryIndex];
-    document.getElementById('upload-story-row').textContent = uploadStoryIndex + 2; // sheet row
-    document.getElementById('upload-story-status').textContent = s.Status || '—';
-    infoEl.style.display = 'block';
-  } else {
-    infoEl.style.display = 'none';
-  }
+  uploadStoryIndex = i==='' ? null : parseInt(i);
+  const info = document.getElementById('upload-story-info');
+  if (uploadStoryIndex!==null) {
+    document.getElementById('upload-story-row').textContent = uploadStoryIndex+2;
+    document.getElementById('upload-story-status').textContent = allStories[uploadStoryIndex].Status||'—';
+    info.style.display='block';
+  } else info.style.display='none';
 }
 
 function handleThumb(input) {
   thumbFile = input.files[0];
   if (!thumbFile) return;
-  document.getElementById('thumb-name').textContent = '📎 ' + thumbFile.name;
-  // Show preview
-  const reader = new FileReader();
-  reader.onload = e => {
-    document.getElementById('thumb-preview').src = e.target.result;
-    document.getElementById('thumb-preview-wrap').style.display = 'block';
-  };
-  reader.readAsDataURL(thumbFile);
+  document.getElementById('thumb-name').textContent = '📎 '+thumbFile.name;
+  const r = new FileReader();
+  r.onload = e => { document.getElementById('thumb-preview').src=e.target.result; document.getElementById('thumb-preview-wrap').style.display='block'; };
+  r.readAsDataURL(thumbFile);
 }
 
 function handleVideo(input) {
   videoFile = input.files[0];
   if (!videoFile) return;
-  document.getElementById('video-name').textContent = '📎 ' + videoFile.name;
-  document.getElementById('video-size-info').textContent = '📦 Size: ' + formatBytes(videoFile.size);
+  document.getElementById('video-name').textContent = '📎 '+videoFile.name;
+  document.getElementById('video-size-info').textContent = '📦 '+formatBytes(videoFile.size);
 }
 
 async function uploadThumbnail() {
-  if (!thumbFile) { notify('⚠ Select a thumbnail image first'); return; }
-  if (uploadStoryIndex === null) { notify('⚠ Select which story this belongs to'); return; }
-  if (!ytAccessToken) { notify('⚠ Sign in via YouTube tab first'); switchTab('youtube'); return; }
-
-  await runDriveUpload(
-    thumbFile, 'thumb',
-    ['ts1','ts2','ts3','ts4'], 'thumb-bar', 'thumb-progress', 'thumb-url',
-    'thumbnailUrl', uploadStoryIndex
-  );
+  if (!thumbFile) { notify('⚠ Select thumbnail first', true); return; }
+  if (uploadStoryIndex===null) { notify('⚠ Select a story first', true); return; }
+  if (!ytAccessToken) { notify('⚠ Sign in via Publish tab first', true); switchTab('publish'); return; }
+  await runDriveUpload(thumbFile,'thumb',['ts1','ts2','ts3','ts4'],'thumb-bar','thumb-progress','thumb-url','thumbnailUrl',uploadStoryIndex);
 }
 
 async function uploadVideo() {
-  if (!videoFile) { notify('⚠ Select a video file first'); return; }
-  if (uploadStoryIndex === null) { notify('⚠ Select which story this belongs to'); return; }
-  if (!ytAccessToken) { notify('⚠ Sign in via YouTube tab first'); switchTab('youtube'); return; }
-
-  await runDriveUpload(
-    videoFile, 'video',
-    ['vs1','vs2','vs3','vs4'], 'video-bar', 'video-progress', 'video-url',
-    'videoUrl', uploadStoryIndex
-  );
+  if (!videoFile) { notify('⚠ Select video first', true); return; }
+  if (uploadStoryIndex===null) { notify('⚠ Select a story first', true); return; }
+  if (!ytAccessToken) { notify('⚠ Sign in via Publish tab first', true); switchTab('publish'); return; }
+  await runDriveUpload(videoFile,'video',['vs1','vs2','vs3','vs4'],'video-bar','video-progress','video-url','videoUrl',uploadStoryIndex);
 }
 
-async function runDriveUpload(file, type, stages, barId, progressId, resultId, urlField, storyIdx) {
-  const progWrap = document.getElementById(progressId);
-  const bar = document.getElementById(barId);
-  const resultEl = document.getElementById(resultId);
-
-  progWrap.classList.add('visible');
-  resultEl.classList.remove('visible');
-  stages.forEach(id => document.getElementById(id).className = 'stage-indicator');
-
-  const setStage = (n, state) => document.getElementById(stages[n]).className = 'stage-indicator ' + state;
-  const setBar = pct => { bar.style.width = pct + '%'; };
+async function runDriveUpload(file,type,stages,barId,progressId,resultId,urlField,storyIdx) {
+  const progWrap=document.getElementById(progressId), bar=document.getElementById(barId), resultEl=document.getElementById(resultId);
+  progWrap.classList.add('visible'); resultEl.classList.remove('visible');
+  stages.forEach(id => document.getElementById(id).className='stage-indicator');
+  const setStage=(n,state)=>document.getElementById(stages[n]).className='stage-indicator '+state;
+  const setBar=pct=>{bar.style.width=pct+'%'};
 
   try {
-    // Stage 1: Read file
-    setStage(0, 'active'); setBar(5);
-    await delay(300);
-    setStage(0, 'done'); setBar(15);
+    setStage(0,'active'); setBar(5); await delay(200);
+    setStage(0,'done'); setBar(15);
+    setStage(1,'active'); setBar(20);
 
-    // Stage 2: Upload to Google Drive via multipart
-    setStage(1, 'active'); setBar(20);
-
-    const folderId = cfg.folder;
-    const metadata = { name: file.name, mimeType: file.type, parents: folderId ? [folderId] : [] };
-
-    // Use resumable upload for large files, multipart for small
+    const meta={name:file.name, mimeType:file.type, parents:cfg.folder?[cfg.folder]:[]};
     let fileId;
-    if (file.size > 5 * 1024 * 1024) {
-      // Resumable upload
-      fileId = await driveResumableUpload(file, metadata, (pct) => {
-        setBar(20 + Math.round(pct * 55));
-        if (type === 'video') {
-          const pctEl = document.getElementById('video-upload-pct');
-          if (pctEl) pctEl.textContent = Math.round(pct * 100) + '% uploaded';
-        }
+    if (file.size > 5*1024*1024) {
+      fileId = await driveResumableUpload(file, meta, pct=>{
+        setBar(20+Math.round(pct*55));
+        if (type==='video') { const el=document.getElementById('video-upload-pct'); if(el) el.textContent=Math.round(pct*100)+'% uploaded'; }
       });
     } else {
-      // Multipart upload for small files
-      fileId = await driveMultipartUpload(file, metadata);
+      fileId = await driveMultipartUpload(file, meta);
     }
+    setStage(1,'done'); setBar(78);
 
-    setStage(1, 'done'); setBar(78);
-
-    // Stage 3: Make public
-    setStage(2, 'active');
+    setStage(2,'active');
     await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}/permissions`, {
-      method: 'POST',
-      headers: { 'Authorization': 'Bearer ' + ytAccessToken, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ role: 'reader', type: 'anyone' })
+      method:'POST', headers:{'Authorization':'Bearer '+ytAccessToken,'Content-Type':'application/json'},
+      body:JSON.stringify({role:'reader',type:'anyone'})
     });
-    const driveUrl = `https://drive.google.com/file/d/${fileId}/view`;
-    setStage(2, 'done'); setBar(88);
+    const driveUrl=`https://drive.google.com/file/d/${fileId}/view`;
+    setStage(2,'done'); setBar(88);
 
-    // Stage 4: Save URL back to Google Sheet
-    setStage(3, 'active');
-    if (cfg.url && storyIdx !== null) {
+    setStage(3,'active');
+    if (cfg.url && storyIdx!==null) {
       try {
-        await fetch(cfg.url, {
-          method: 'POST',
-          body: JSON.stringify({
-            action: 'saveFileUrl',
-            storyTitle: allStories[storyIdx].Title,
-            urlField,
-            url: driveUrl,
-            storyRow: storyIdx + 2
-          })
-        });
-        // Update local data
-        allStories[storyIdx][urlField === 'thumbnailUrl' ? 'Drive Thumbnail URL' : 'Drive Video URL'] = driveUrl;
-      } catch(e) { console.warn('Sheet save failed:', e); }
+        await fetch(cfg.url, { method:'POST', body:JSON.stringify({ action:'saveFileUrl', storyTitle:allStories[storyIdx].Title, urlField, url:driveUrl, storyRow:storyIdx+2 }) });
+        allStories[storyIdx][urlField==='thumbnailUrl'?'Drive Thumbnail URL':'Drive Video URL'] = driveUrl;
+      } catch(e) {}
     }
-    setStage(3, 'done'); setBar(100);
+    setStage(3,'done'); setBar(100);
 
-    // Show result
-    resultEl.innerHTML = `✓ ${type === 'thumb' ? 'Thumbnail' : 'Video'} saved to Drive:<br>
-      <a href="${driveUrl}" target="_blank" style="color:var(--accent2);word-break:break-all">${driveUrl}</a>`;
+    resultEl.innerHTML=`✓ ${type==='thumb'?'Thumbnail':'Video'} uploaded:<br><a href="${driveUrl}" target="_blank" style="color:var(--accent2)">${driveUrl}</a>`;
     resultEl.classList.add('visible');
-    notify(`✅ ${type === 'thumb' ? 'Thumbnail' : 'Video'} uploaded for "${allStories[storyIdx]?.Title}"!`);
+
+    // Auto-set status to Ready if both files uploaded
+    if (storyIdx!==null) {
+      const s = allStories[storyIdx];
+      if (s['Drive Thumbnail URL'] && s['Drive Video URL']) {
+        s.Status = 'Ready';
+        if (cfg.url) fetch(cfg.url,{method:'POST',body:JSON.stringify({action:'updateStatus',storyRow:storyIdx+2,status:'Ready'})}).catch(()=>{});
+        notify(`📦 "${s.Title}" is Ready for review!`);
+        renderAll();
+      } else {
+        notify(`✅ ${type==='thumb'?'Thumbnail':'Video'} uploaded for "${s.Title}"`);
+      }
+    }
+
+    // Reset file input
+    if (type==='thumb') { thumbFile=null; document.getElementById('thumb-name').textContent=''; }
+    else { videoFile=null; document.getElementById('video-name').textContent=''; document.getElementById('video-size-info').textContent=''; }
 
   } catch(err) {
     setBar(0);
-    resultEl.innerHTML = `<span style="color:var(--accent3)">⚠ Upload failed: ${err.message}</span>`;
+    resultEl.innerHTML=`<span style="color:var(--accent3)">⚠ Failed: ${err.message}</span>`;
     resultEl.classList.add('visible');
-    notify('⚠ Upload failed — ' + err.message);
+    notify('⚠ Upload failed: '+err.message, true);
   }
 }
 
-async function driveMultipartUpload(file, metadata) {
-  const boundary = 'storyforge_boundary';
-  const metaPart = JSON.stringify(metadata);
+async function driveMultipartUpload(file, meta) {
+  const boundary='bls_boundary', metaStr=JSON.stringify(meta);
   const fileData = await file.arrayBuffer();
-
-  const body = new Uint8Array([
-    ...new TextEncoder().encode(`--${boundary}\r\nContent-Type: application/json\r\n\r\n${metaPart}\r\n--${boundary}\r\nContent-Type: ${file.type}\r\n\r\n`),
+  const body=new Uint8Array([
+    ...new TextEncoder().encode(`--${boundary}\r\nContent-Type:application/json\r\n\r\n${metaStr}\r\n--${boundary}\r\nContent-Type:${file.type}\r\n\r\n`),
     ...new Uint8Array(fileData),
     ...new TextEncoder().encode(`\r\n--${boundary}--`)
   ]);
-
-  const res = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', {
-    method: 'POST',
-    headers: {
-      'Authorization': 'Bearer ' + ytAccessToken,
-      'Content-Type': `multipart/related; boundary=${boundary}`,
-    },
-    body
+  const res=await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart',{
+    method:'POST', headers:{'Authorization':'Bearer '+ytAccessToken,'Content-Type':`multipart/related;boundary=${boundary}`}, body
   });
+  if(!res.ok){const e=await res.json().catch(()=>({}));throw new Error(e?.error?.message||'Drive upload failed');}
+  return (await res.json()).id;
+}
 
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err.error?.message || 'Drive upload failed (' + res.status + ')');
+async function driveResumableUpload(file, meta, onProgress) {
+  const initRes=await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable',{
+    method:'POST',
+    headers:{'Authorization':'Bearer '+ytAccessToken,'Content-Type':'application/json','X-Upload-Content-Type':file.type,'X-Upload-Content-Length':file.size},
+    body:JSON.stringify(meta)
+  });
+  if(!initRes.ok) throw new Error('Drive session start failed');
+  const uploadUrl=initRes.headers.get('Location');
+  const CHUNK=5*1024*1024;
+  let offset=0;
+  while(offset<file.size){
+    const end=Math.min(offset+CHUNK,file.size);
+    const res=await fetch(uploadUrl,{method:'PUT',headers:{'Content-Range':`bytes ${offset}-${end-1}/${file.size}`,'Content-Type':file.type},body:file.slice(offset,end)});
+    if(res.status===308){const r=res.headers.get('Range');offset=r?parseInt(r.split('-')[1])+1:end;onProgress(offset/file.size);}
+    else if(res.status===200||res.status===201){onProgress(1);return(await res.json()).id;}
+    else{const e=await res.json().catch(()=>({}));throw new Error(e?.error?.message||`Chunk failed (${res.status})`);}
   }
-  const data = await res.json();
-  return data.id;
+  throw new Error('No file ID returned');
 }
 
-async function driveResumableUpload(file, metadata, onProgress) {
-  // Init resumable session
-  const initRes = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable', {
-    method: 'POST',
-    headers: {
-      'Authorization': 'Bearer ' + ytAccessToken,
-      'Content-Type': 'application/json',
-      'X-Upload-Content-Type': file.type,
-      'X-Upload-Content-Length': file.size,
-    },
-    body: JSON.stringify(metadata)
-  });
-
-  if (!initRes.ok) throw new Error('Failed to start Drive upload session');
-  const uploadUrl = initRes.headers.get('Location');
-
-  // Upload in chunks
-  const CHUNK = 5 * 1024 * 1024;
-  let offset = 0;
-
-  while (offset < file.size) {
-    const end = Math.min(offset + CHUNK, file.size);
-    const chunk = file.slice(offset, end);
-
-    const res = await fetch(uploadUrl, {
-      method: 'PUT',
-      headers: {
-        'Content-Range': `bytes ${offset}-${end-1}/${file.size}`,
-        'Content-Type': file.type,
-      },
-      body: chunk
-    });
-
-    if (res.status === 308) {
-      const range = res.headers.get('Range');
-      offset = range ? parseInt(range.split('-')[1]) + 1 : end;
-      onProgress(offset / file.size);
-    } else if (res.status === 200 || res.status === 201) {
-      const data = await res.json();
-      onProgress(1);
-      return data.id;
-    } else {
-      const err = await res.json().catch(() => ({}));
-      throw new Error(err.error?.message || `Upload failed (${res.status})`);
-    }
-  }
-  throw new Error('Upload ended without file ID');
+// ══════════════════════════════════════════════════
+// UTILS
+// ══════════════════════════════════════════════════
+function formatBytes(b) {
+  if(b>1e9) return(b/1e9).toFixed(1)+' GB';
+  if(b>1e6) return(b/1e6).toFixed(1)+' MB';
+  return(b/1e3).toFixed(0)+' KB';
 }
 
-function delay(ms) { return new Promise(r => setTimeout(r, ms)); }
+function delay(ms){return new Promise(r=>setTimeout(r,ms));}
 
-// ── TABS ──────────────────────────────────────────────
-function switchTab(id) {
-  document.querySelectorAll('.tab').forEach((t, i) => {
-    t.classList.toggle('active', t.getAttribute('onclick').includes(id));
-  });
-  document.querySelectorAll('.page').forEach(p => {
-    p.classList.toggle('active', p.id === 'page-' + id);
-  });
-}
-
-// ── NOTIFICATION ──────────────────────────────────────────────
 let notifTimeout;
-function notify(msg) {
-  const el = document.getElementById('notif');
-  el.textContent = msg;
-  el.classList.add('show');
+function notify(msg, isError=false) {
+  const el=document.getElementById('notif');
+  el.textContent=msg;
+  el.className='notification'+(isError?' error':'')+' show';
   clearTimeout(notifTimeout);
-  notifTimeout = setTimeout(() => el.classList.remove('show'), 3000);
+  notifTimeout=setTimeout(()=>el.classList.remove('show'),3500);
 }
 </script>
 </body>
