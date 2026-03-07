@@ -148,8 +148,8 @@ textarea{min-height:100px;resize:vertical;line-height:1.5}
 .upload-result.visible{display:block}
 
 /* ── NOTIFICATION ── */
-.notification{position:fixed;bottom:20px;right:20px;background:var(--panel);border:1px solid var(--accent);color:var(--accent);padding:12px 18px;font-family:'Share Tech Mono',monospace;font-size:11px;box-shadow:var(--glow);z-index:9000;transform:translateY(100px);transition:transform .3s cubic-bezier(.4,0,.2,1);max-width:300px}
-.notification.show{transform:none}
+.notification{position:fixed;top:60px;right:16px;background:var(--panel);border:1px solid var(--accent);color:var(--accent);padding:10px 16px;font-family:'Share Tech Mono',monospace;font-size:11px;box-shadow:var(--glow);z-index:9000;transform:translateY(-120px);opacity:0;transition:transform .3s cubic-bezier(.4,0,.2,1),opacity .3s ease;max-width:300px;border-radius:2px}
+.notification.show{transform:translateY(0);opacity:1}
 .notification.error{border-color:var(--accent3);color:var(--accent3);box-shadow:0 0 20px rgba(255,0,85,.3)}
 
 /* ── MODAL ── */
@@ -833,7 +833,7 @@ async function loadData(silent = false) {
     } else if (!loadedOk) {
       statusEl.textContent = `⚠ Refresh failed — showing ${allStories.length} cached`;
     }
-    if (!silent) notify('⚠ Could not connect to Sheet — showing cached data', true);
+    // Never show error toast on silent background refresh — data is already loaded
     if (allStories.length === 0) renderAll();
   }
 }
