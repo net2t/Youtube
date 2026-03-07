@@ -817,17 +817,24 @@ async function loadData(silent = false) {
   }
 
   if (!silent) statusEl.textContent = '⟳ Fetching...';
+  let loadedOk = false;
   try {
     const res = await fetch(`${url}?action=getStories`);
     const data = await res.json();
     allStories = data.stories || [];
     renderAll();
+    loadedOk = true;
     statusEl.textContent = `✓ ${new Date().toLocaleTimeString()}`;
     if (!silent) notify('✅ Data refreshed');
   } catch(e) {
-    statusEl.textContent = '⚠ Connection failed';
-    if (!silent) notify('⚠ Could not connect to Sheet', true);
-    renderAll();
+    // Keep showing last success time if we already have data
+    if (!loadedOk && allStories.length === 0) {
+      statusEl.textContent = '⚠ Connection failed';
+    } else if (!loadedOk) {
+      statusEl.textContent = `⚠ Refresh failed — showing ${allStories.length} cached`;
+    }
+    if (!silent) notify('⚠ Could not connect to Sheet — showing cached data', true);
+    if (allStories.length === 0) renderAll();
   }
 }
 
@@ -934,29 +941,44 @@ function renderThemeBars() {
 // DONUT CHART
 // ══════════════════════════════════════════════════
 function renderDonutChart() {
+  // Only render if we actually have story data
+  if (!allStories.length) return;
+
   const ctx = document.getElementById('donut-chart').getContext('2d');
   const labels = STATUSES;
   const data = labels.map(s => allStories.filter(r => r.Status===s).length);
   const colors = labels.map(s => STATUS_HEX[s]);
 
+  // Only include statuses that have at least 1 story (avoids Chart.js empty-data warnings)
+  const filteredLabels = [], filteredData = [], filteredColors = [], filteredBg = [];
+  labels.forEach((l,i) => {
+    if (data[i] > 0) {
+      filteredLabels.push(l);
+      filteredData.push(data[i]);
+      filteredColors.push(colors[i]);
+      filteredBg.push(colors[i]+'44');
+    }
+  });
+
+  if (filteredData.length === 0) return; // nothing to show
+
   if (donutChart) donutChart.destroy();
   donutChart = new Chart(ctx, {
     type: 'doughnut',
-    data: { labels, datasets: [{ data, backgroundColor: colors.map(c => c+'44'), borderColor: colors, borderWidth: 2 }] },
+    data: { labels: filteredLabels, datasets: [{ data: filteredData, backgroundColor: filteredBg, borderColor: filteredColors, borderWidth: 2 }] },
     options: {
       responsive: true, maintainAspectRatio: true, cutout: '65%',
       plugins: {
         legend: { display: false },
-        tooltip: { callbacks: { label: ctx => ` ${ctx.label}: ${ctx.parsed}` } }
+        tooltip: { callbacks: { label: c => ` ${c.label}: ${c.parsed}` } }
       }
     }
   });
 
-  // Legend
+  // Legend — only active statuses
   const leg = document.getElementById('donut-legend');
-  leg.innerHTML = labels.map((l,i) => data[i] > 0
-    ? `<div style="display:flex;align-items:center;gap:6px"><span style="width:8px;height:8px;border-radius:50%;background:${colors[i]};display:inline-block"></span><span style="color:${colors[i]}">${l}: ${data[i]}</span></div>`
-    : ''
+  leg.innerHTML = filteredLabels.map((l,i) =>
+    `<div style="display:flex;align-items:center;gap:6px"><span style="width:8px;height:8px;border-radius:50%;background:${filteredColors[i]};display:inline-block"></span><span style="color:${filteredColors[i]}">${l}: ${filteredData[i]}</span></div>`
   ).join('');
 }
 
