@@ -17,7 +17,7 @@
   --glow:0 0 20px rgba(0,255,136,.3);--glow2:0 0 20px rgba(0,204,255,.3);
 }
 *{margin:0;padding:0;box-sizing:border-box}
-body{background:var(--bg);color:var(--text);font-family:'Rajdhani',sans-serif;font-size:15px;min-height:100vh;overflow-x:hidden}
+body{background:var(--bg);color:var(--text);font-family:'Rajdhani',sans-serif;font-size:15px;min-height:100vh;overflow-x:hidden;-webkit-tap-highlight-color:transparent}
 body::before{content:'';position:fixed;inset:0;background:repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,255,136,.012) 2px,rgba(0,255,136,.012) 4px);pointer-events:none;z-index:9999}
 body::after{content:'';position:fixed;inset:0;background-image:linear-gradient(rgba(0,255,136,.025) 1px,transparent 1px),linear-gradient(90deg,rgba(0,255,136,.025) 1px,transparent 1px);background-size:40px 40px;pointer-events:none;z-index:0}
 
@@ -40,7 +40,7 @@ body::after{content:'';position:fixed;inset:0;background-image:linear-gradient(r
 #refresh-status{font-family:'Share Tech Mono',monospace;font-size:9px;color:var(--dim);max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 
 /* ── TABS ── */
-.tabs{display:flex;background:var(--bg2);border-bottom:1px solid var(--border);padding:0 16px;position:sticky;top:52px;z-index:99;overflow-x:auto}
+.tabs{display:flex;background:var(--bg2);border-bottom:1px solid var(--border);padding:0 8px;position:sticky;top:52px;z-index:99;overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none}
 .tab{font-family:'Orbitron',monospace;font-size:9px;letter-spacing:2px;padding:12px 16px;cursor:pointer;border:none;background:none;color:var(--dim);border-bottom:2px solid transparent;transition:all .2s;white-space:nowrap;text-transform:uppercase}
 .tab:hover{color:var(--accent)}
 .tab.active{color:var(--accent);border-bottom-color:var(--accent);background:rgba(0,255,136,.05);text-shadow:var(--glow)}
@@ -180,17 +180,149 @@ textarea{min-height:100px;resize:vertical;line-height:1.5}
 .settings-overlay{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:3999;display:none}
 .settings-overlay.open{display:block}
 
-/* ── RESPONSIVE ── */
+/* ── TWO COLUMN GRID (used in Upload + Publish) ── */
+.two-col-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+
+/* ══════════════════════════════════════════
+   RESPONSIVE — TABLET (≤900px)
+══════════════════════════════════════════ */
 @media(max-width:900px){
   .kpi-grid{grid-template-columns:repeat(3,1fr)}
   .dash-grid{grid-template-columns:1fr}
   .form-grid{grid-template-columns:1fr}
-  .pipeline{flex-wrap:wrap}
+  .pipeline{flex-wrap:wrap;gap:4px}
+  .pipeline-step{flex:1 1 30%;min-width:90px}
   .pipeline-step::after{display:none}
+  .review-grid{grid-template-columns:1fr}
 }
+
+/* ══════════════════════════════════════════
+   RESPONSIVE — MOBILE (≤600px)
+══════════════════════════════════════════ */
 @media(max-width:600px){
-  .kpi-grid{grid-template-columns:1fr 1fr}
-  .kpi-value{font-size:20px}
+
+  /* ── Body & layout ── */
+  body{font-size:14px}
+  .main{padding:10px}
+
+  /* ── Header ── */
+  .header{height:auto;min-height:52px;padding:8px 10px;flex-wrap:nowrap;gap:6px}
+  .logo-text{font-size:11px;letter-spacing:1px}
+  .logo-img{width:26px;height:26px}
+  .header-actions{gap:5px}
+  #refresh-status{display:none}  /* hide on mobile — too narrow */
+  #clock{display:none}
+  #story-count-header{font-size:9px}
+  .hbtn{padding:5px 8px;font-size:9px;letter-spacing:0}
+  .hbtn-icon{width:28px;height:28px;font-size:13px}
+
+  /* ── Tabs — scrollable, bigger touch targets ── */
+  .tabs{padding:0 4px;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+  .tabs::-webkit-scrollbar{display:none}
+  .tab{font-size:8px;padding:12px 10px;letter-spacing:1px}
+
+  /* ── KPI cards — 2 columns ── */
+  .kpi-grid{grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px}
+  .kpi-card{padding:12px 10px}
+  .kpi-value{font-size:22px}
+  .kpi-label{font-size:8px}
+  .kpi-sub{font-size:9px}
+
+  /* ── Pipeline — 2 per row ── */
+  .pipeline{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-bottom:12px}
+  .pipeline-step{padding:10px 4px;min-width:0}
+  .pipeline-num{font-size:18px}
+  .pipeline-label{font-size:8px;letter-spacing:0}
+
+  /* ── Dash grid — single column ── */
+  .dash-grid{grid-template-columns:1fr;gap:10px}
+
+  /* ── Panels ── */
+  .panel{padding:14px 12px}
+  .panel-title{font-size:8px;letter-spacing:2px}
+
+  /* ── Progress bars ── */
+  .progress-label{font-size:9px}
+  .progress-count{font-size:10px}
+
+  /* ── Story table — card layout on mobile ── */
+  .table-wrap{overflow-x:visible}
+  table,thead,tbody,th,td,tr{display:block;width:100%}
+  thead{display:none} /* hide headers, show as labels per cell */
+  tr{background:var(--bg2);border:1px solid var(--border);margin-bottom:10px;padding:10px}
+  tr:hover{background:var(--bg2)}
+  td{padding:4px 0;border:none;max-width:100%;display:flex;gap:6px;align-items:flex-start;font-size:13px}
+  td::before{
+    content:attr(data-label);
+    font-family:'Share Tech Mono',monospace;
+    font-size:8px;color:var(--dim);
+    letter-spacing:1px;text-transform:uppercase;
+    min-width:56px;flex-shrink:0;padding-top:2px
+  }
+  .story-preview{-webkit-line-clamp:3}
+  td:last-child{padding-top:8px;border-top:1px solid var(--border);margin-top:6px}
+
+  /* ── Forms ── */
+  .form-grid{grid-template-columns:1fr;gap:10px}
+  .form-group.full{grid-column:1}
+  input,textarea,select{font-size:16px} /* prevent iOS zoom on focus */
+  textarea{min-height:80px}
+
+  /* ── Upload zones ── */
+  .upload-zone{padding:18px 12px}
+  .upload-icon{font-size:22px}
+  .upload-label{font-size:9px}
+
+  /* ── Buttons ── */
+  .btn-primary{padding:12px 18px;font-size:9px;width:100%}
+  .btn-secondary{padding:10px 14px;font-size:9px;width:100%}
+  .btn-copy{padding:5px 10px;font-size:9px}
+
+  /* ── Upload grid — stack vertically ── */
+  div[style*="grid-template-columns:1fr 1fr"]{
+    display:flex !important;
+    flex-direction:column !important;
+    gap:10px !important
+  }
+
+  /* ── Auth banner ── */
+  #yt-auth-banner,#yt-auth-ok{flex-direction:column;gap:8px;padding:12px}
+
+  /* ── Review cards ── */
+  .review-card{padding:12px}
+  .review-grid{grid-template-columns:1fr}
+  .review-field{padding:7px 8px}
+  .review-field-val{max-height:none}
+
+  /* ── Add Story modal ── */
+  .modal{padding:16px 14px;max-height:92vh}
+  .modal-overlay{padding:10px}
+
+  /* ── Settings drawer — full width on mobile ── */
+  .settings-modal{width:100%;right:-100%}
+  .settings-modal.open{right:0}
+
+  /* ── Donut chart ── */
+  #donut-chart{max-width:160px !important;max-height:160px !important}
+
+  /* ── Upload progress stages ── */
+  .upload-stage{font-size:9px}
+  .big-progress{margin-top:8px}
+
+  /* ── Two col grid collapse ── */
+  .two-col-grid{grid-template-columns:1fr !important}
+
+  /* ── YT upload result ── */
+  #yt-upload-result,#yt-upload-error{font-size:10px;word-break:break-all}
+
+  /* ── Header mobile show/hide ── */
+  .hd-hide-sm{display:none !important}
+  #hd-add-sm{display:flex !important}
+}
+
+/* On desktop hide the small + button */
+@media(min-width:601px){
+  #hd-add-sm{display:none !important}
 }
 </style>
 </head>
@@ -203,11 +335,12 @@ textarea{min-height:100px;resize:vertical;line-height:1.5}
     <span class="logo-text">BRIGHT <span>LITTLE</span> STORIES</span>
   </a>
   <div class="header-actions">
-    <span id="refresh-status">⟳ Loading...</span>
+    <span id="refresh-status" class="hd-hide-sm">⟳ Loading...</span>
     <button class="hbtn accent" onclick="manualRefresh()">⟳ REFRESH</button>
-    <button class="hbtn" onclick="switchTab('add')" style="color:var(--accent2);border-color:var(--accent2)">+ ADD STORY</button>
-    <span id="clock" style="font-family:'Share Tech Mono',monospace;font-size:10px;color:var(--dim)">--:--:--</span>
-    <span id="story-count-header" style="font-family:'Share Tech Mono',monospace;font-size:10px;color:var(--dim)">0 STORIES</span>
+    <button class="hbtn hd-hide-sm" onclick="openAddStory()" style="color:var(--accent2);border-color:var(--accent2)">+ ADD STORY</button>
+    <span id="clock" class="hd-hide-sm" style="font-family:'Share Tech Mono',monospace;font-size:10px;color:var(--dim)">--:--:--</span>
+    <span id="story-count-header" class="hd-hide-sm" style="font-family:'Share Tech Mono',monospace;font-size:10px;color:var(--dim)">0 STORIES</span>
+    <button class="hbtn-icon" onclick="openAddStory()" title="Add Story" style="color:var(--accent2);border-color:var(--accent2)" id="hd-add-sm">+</button>
     <button class="hbtn-icon" onclick="openSettings()" title="Settings">⚙</button>
   </div>
 </header>
@@ -308,7 +441,7 @@ textarea{min-height:100px;resize:vertical;line-height:1.5}
     </div>
   </div>
 
-  <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;max-width:900px;margin-bottom:14px">
+  <div class="two-col-grid" style="max-width:900px;margin-bottom:14px">
     <div class="panel">
       <div class="panel-title">② Thumbnail → Drive</div>
       <div class="upload-zone" id="thumb-zone">
@@ -471,7 +604,7 @@ textarea{min-height:100px;resize:vertical;line-height:1.5}
     </div>
   </div>
 
-  <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;max-width:900px;margin-bottom:14px">
+  <div class="two-col-grid" style="max-width:900px;margin-bottom:14px">
     <div class="panel">
       <div class="panel-title">Video File</div>
       <div class="upload-zone">
@@ -842,15 +975,15 @@ function renderStoryTable(stories) {
     const statusKey = (s.Status||'').toLowerCase().replace(/\s/g,'');
     const badge = `<span class="badge badge-${statusKey}">${s.Status||'—'}</span>`;
     return `<tr>
-      <td style="font-family:'Share Tech Mono',monospace;color:var(--dim);font-size:10px">${realIdx+1}</td>
-      <td><span class="theme-tag">${s.Theme||'—'}</span></td>
-      <td><div class="story-title">${s.Title||'—'}</div><div class="story-preview">${s['Story Text']||''}</div></td>
-      <td style="max-width:180px;font-size:11px;color:var(--dim);line-height:1.4">${s.Moral||'—'}</td>
-      <td style="font-family:'Share Tech Mono',monospace;color:var(--accent2);text-align:center">${words}</td>
-      <td style="font-family:'Share Tech Mono',monospace;font-size:9px;color:var(--dim);white-space:nowrap">${s.Date||''}</td>
-      <td>${badge}</td>
-      <td style="white-space:nowrap">
-        <button class="btn-copy" onclick="copyStory(${realIdx})" style="margin-bottom:3px">COPY</button><br>
+      <td data-label="#" style="font-family:'Share Tech Mono',monospace;color:var(--dim);font-size:10px">${realIdx+1}</td>
+      <td data-label="Theme"><span class="theme-tag">${s.Theme||'—'}</span></td>
+      <td data-label="Story"><div class="story-title">${s.Title||'—'}</div><div class="story-preview">${s['Story Text']||''}</div></td>
+      <td data-label="Moral" style="font-size:11px;color:var(--dim);line-height:1.4">${s.Moral||'—'}</td>
+      <td data-label="Words" style="font-family:'Share Tech Mono',monospace;color:var(--accent2)">${words}</td>
+      <td data-label="Date" style="font-family:'Share Tech Mono',monospace;font-size:9px;color:var(--dim)">${s.Date||''}</td>
+      <td data-label="Status">${badge}</td>
+      <td data-label="Actions" style="flex-wrap:wrap;gap:5px">
+        <button class="btn-copy" onclick="copyStory(${realIdx})">COPY</button>
         <button class="btn-copy" onclick="markStoryboarded(${realIdx})" style="color:var(--accent2);border-color:var(--accent2)">▶ STORYBOARD</button>
       </td>
     </tr>`;
@@ -1037,7 +1170,7 @@ function switchTab(id) {
 // ══════════════════════════════════════════════════
 // YOUTUBE OAUTH
 // ══════════════════════════════════════════════════
-const YT_CLIENT_ID = '343450302672-6svgk13f882hnlkbpcnp8156sb64b0aa.apps.googleusercontent.com';
+const YT_CLIENT_ID = '165516915479-27ks2km5q9sbod00uvsdmda3vfgf0toa.apps.googleusercontent.com';
 const YT_SCOPES = 'https://www.googleapis.com/auth/youtube.upload https://www.googleapis.com/auth/youtube https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/drive.file';
 let ytTokenClient=null, ytAccessToken=null, ytUserEmail=null, ytVideoFile=null, ytThumbFile=null;
 
