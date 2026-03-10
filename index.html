@@ -1435,27 +1435,61 @@ function populateYouTube() {
   document.getElementById('yt-title').value = title;
   document.getElementById('yt-title-count').textContent = title.length;
 
-  // Build tags from hashtags column + defaults
-  const hashtagStr = s.Hashtags || '';
-  const hashTags = hashtagStr.split(/\s+|,/).map(h => h.replace(/^#/,'').trim()).filter(Boolean);
-  const defaultTags = ['kids story','bedtime story','children animation','moral story','animated story for kids','storytime'];
-  const allTags = [...new Set([...hashTags, ...defaultTags, (s.Theme||'').toLowerCase()+' story', (s.Title||'').toLowerCase()])];
-  document.getElementById('yt-tags').value = allTags.join(', ');
+  // ── TAGS ─────────────────────────────────────────────────────────
+  // Hashtags col = plain comma-separated tags from ChatGPT/Make
+  // These go directly into YouTube tags field (already in right format)
+  const hashtagCol = s.Hashtags || '';
+  const csvTags = hashtagCol.split(',').map(t => t.trim()).filter(Boolean);
+
+  // Smart defaults — always included
+  const defaultTags = [
+    'kids story', 'bedtime story', 'children animation', 'moral story',
+    'animated story for kids', 'storytime', 'bright little stories',
+    'short story for kids', 'kids youtube story',
+  ];
+
+  // Add theme-specific tag + title words as extra tags
+  const themeTags = [(s.Theme||'').toLowerCase()+' story for kids'];
+
+  // Combine: CSV tags from sheet + defaults + theme (deduped)
+  const finalTags = [...new Set([...csvTags, ...defaultTags, ...themeTags])];
+  document.getElementById('yt-tags').value = finalTags.join(', ');
+
+  // ── DESCRIPTION ──────────────────────────────────────────────────
+  // Strip the trailing #hashtags from story text (they start with # after last sentence)
+  const rawStory = s['Story Text'] || '';
+
+  // Extract the #branded hashtags that are embedded at end of story text
+  // Pattern: find the block of #words at the end after a sentence
+  const hashBlockMatch = rawStory.match(/((?:#\S+\s*){2,})$/);
+  const embeddedHashtags = hashBlockMatch ? hashBlockMatch[1].trim() : '';
+  // Clean story = remove the trailing # block
+  const cleanStory = embeddedHashtags
+    ? rawStory.slice(0, rawStory.length - embeddedHashtags.length).trim()
+    : rawStory.trim();
+
+  // Build description with clean story, moral, then hashtags at bottom
+  const brandedHashtags = embeddedHashtags || '#BrightLittleStories';
+  // Always ensure #BrightLittleStories is present in footer
+  const footerHashtags = brandedHashtags.includes('#BrightLittleStories')
+    ? brandedHashtags
+    : brandedHashtags + ' #BrightLittleStories';
 
   document.getElementById('yt-desc').value =
-`${s.Title} | Bright Little Stories
+\`\${s.Title} | Bright Little Stories
 
-${s['Story Text']||''}
+\${cleanStory}
 
-Today's Lesson: ${s.Moral||''}
-
-${hashtagStr}
+📖 Today's Lesson: \${s.Moral||''}
 
 ─────────────────────────
-Subscribe for new stories every week!
-Like if your child enjoyed this story!
+🔔 Subscribe for a new story every week!
+👍 Like if your child enjoyed this story!
+💬 Tell us your child's favourite character below!
 ─────────────────────────
-#kidsstory #bedtimestory #childrenstories #animation #brightlittlestories`;
+
+\${footerHashtags}
+#kidsstory #bedtimestory #childrenstories #animation #brightlittlestories\`;
 }
 
 function handleYTVideo(input) {
