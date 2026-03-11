@@ -2466,7 +2466,12 @@ class VideoEditorApp(ctk.CTk):
             self.batch_run_btn.configure(state="normal")
         else:
             self.batch_run_btn.configure(state="disabled")
-        self.batch_details.configure(text="")
+        # CTkTextbox doesn't support .configure(text=) — use delete/insert
+        if hasattr(self, "batch_details"):
+            self.batch_details.configure(state="normal")
+            self.batch_details.delete("1.0", "end")
+            self.batch_details.insert("end", f"📂 Found {len(files)} file(s)\nClick a file to see details.")
+            self.batch_details.configure(state="disabled")
 
     def _batch_select_all(self):
         if hasattr(self, "batch_listbox"):
