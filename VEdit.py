@@ -22,6 +22,7 @@ import tempfile
 import threading
 import subprocess
 import signal
+import datetime
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
@@ -888,6 +889,10 @@ class VideoEditorApp(ctk.CTk):
     # ════════════════════════════════════════════════════════
     #  UI SKELETON
     # ════════════════════════════════════════════════════════
+    def _on_cancel(self, event=None):
+        """Cancel all running processes."""
+        cancel_all_processes()
+    
     def _build_ui(self):
         self._build_topbar()
         main = ctk.CTkFrame(self, fg_color="transparent")
@@ -1369,6 +1374,28 @@ class VideoEditorApp(ctk.CTk):
             e = ctk.CTkEntry(row3, placeholder_text="0", width=65)
             e.pack(side="left", padx=4)
             setattr(self, attr, e)
+        
+        # Output size options
+        row4 = ctk.CTkFrame(card2, fg_color="transparent")
+        row4.pack(fill="x", pady=4)
+        ctk.CTkLabel(row4, text="Output Size:", width=80, anchor="w").pack(side="left")
+        
+        aspect_ratios = ["Original", "16:9 (YouTube)", "9:16 (Reels/TikTok)", "1:1 (Square)", 
+                        "4:3 (Classic)", "21:9 (Cinema)", "Custom"]
+        self.crop_aspect_ratio = ctk.CTkComboBox(row4, values=aspect_ratios, width=180,
+                                                 command=self._on_crop_aspect_change)
+        self.crop_aspect_ratio.set("Original")
+        self.crop_aspect_ratio.pack(side="left", padx=8)
+        
+        # Custom size inputs (initially hidden)
+        self.crop_size_frame = ctk.CTkFrame(card2, fg_color="transparent")
+        ctk.CTkLabel(self.crop_size_frame, text="Width:", width=50, anchor="w").pack(side="left")
+        self.crop_out_w = ctk.CTkEntry(self.crop_size_frame, placeholder_text="1920", width=80)
+        self.crop_out_w.pack(side="left", padx=4)
+        ctk.CTkLabel(self.crop_size_frame, text="Height:", anchor="w").pack(side="left", padx=(8,4))
+        self.crop_out_h = ctk.CTkEntry(self.crop_size_frame, placeholder_text="1080", width=80)
+        self.crop_out_h.pack(side="left", padx=4)
+        
         ctk.CTkButton(card2, text="✂️ Crop Video", height=36,
                       command=self._do_crop).pack(pady=8, anchor="w")
 
@@ -1606,10 +1633,23 @@ class VideoEditorApp(ctk.CTk):
         self.merge_listbox.selection_set(new_idx)
 
     def _on_resize_preset(self, choice):
-        if "x" in choice and "Custom" not in choice:
-            w, h = choice.split(" ")[0].split("x")
-            self.resize_w.delete(0, "end"); self.resize_w.insert(0, w)
-            self.resize_h.delete(0, "end"); self.resize_h.insert(0, h)
+        if "Custom" in choice:
+            return
+        # Extract dimensions from preset string
+        import re
+        m = re.search(r'(\d+)x(\d+)', choice)
+        if m:
+            self.resize_w.delete(0, "end")
+            self.resize_w.insert(0, m.group(1))
+            self.resize_h.delete(0, "end")
+            self.resize_h.insert(0, m.group(2))
+
+    def _on_crop_aspect_change(self, choice):
+        """Handle aspect ratio selection change."""
+        if choice == "Custom":
+            self.crop_size_frame.pack(fill="x", pady=4)
+        else:
+            self.crop_size_frame.pack_forget()
 
     # ════════════════════════════════════════════════════════
     #  AUTO BATCH OPERATIONS  (Script 1 engine)
@@ -2013,12 +2053,61 @@ class VideoEditorApp(ctk.CTk):
         b   = self.crop_bottom.get().strip() or "0"
         l   = self.crop_left.get().strip()   or "0"
         r   = self.crop_right.get().strip()  or "0"
+        
         info = self.selected_file
         cw  = info["width"]  - int(l) - int(r)
         ch  = info["height"] - int(t) - int(b)
+        
+        # Handle aspect ratio and output sizing
+        aspect_choice = self.crop_aspect_ratio.get()
+        vf_filters = []
+        
+        if aspect_choice != "Original":
+            if aspect_choice == "Custom":
+                # Use custom dimensions
+                try:
+                    target_w = int(self.crop_out_w.get().strip() or cw)
+                    target_h = int(self.crop_out_h.get().strip() or ch)
+                    vf_filters.append(f"scale={target_w}:{target_h}")
+                except ValueError:
+                    pass  # Fall back to original size if invalid input
+            else:
+                # Predefined aspect ratios
+                aspect_map = {
+                    "16:9 (YouTube)": (16, 9),
+                    "9:16 (Reels/TikTok)": (9, 16),
+                    "1:1 (Square)": (1, 1),
+                    "4:3 (Classic)": (4, 3),
+                    "21:9 (Cinema)": (21, 9)
+                }
+                
+                if aspect_choice in aspect_map:
+                    ar_w, ar_h = aspect_map[aspect_choice]
+                    # Calculate target dimensions maintaining aspect ratio
+                    current_ratio = cw / ch
+                    target_ratio = ar_w / ar_h
+                    
+                    if current_ratio > target_ratio:
+                        # Width is too wide, scale based on height
+                        target_h = ch
+                        target_w = int(ch * target_ratio)
+                    else:
+                        # Height is too tall, scale based on width
+                        target_w = cw
+                        target_h = int(cw / target_ratio)
+                    
+                    vf_filters.append(f"scale={target_w}:{target_h}")
+        
+        # Add crop filter
+        crop_filter = f"crop={cw}:{ch}:{l}:{t}"
+        if vf_filters:
+            vf_filters.append(crop_filter)
+            vf = ",".join(vf_filters)
+        else:
+            vf = crop_filter
+        
         out = self._out("cropped")
-        self._run_task([FFMPEG_BIN,"-y","-i",src,
-                        "-vf",f"crop={cw}:{ch}:{l}:{t}","-c:a","copy",out],
+        self._run_task([FFMPEG_BIN,"-y","-i",src,"-vf",vf,"-c:a","copy",out],
                        out, "Cropping")
 
     def _do_pad(self):
@@ -2109,6 +2198,153 @@ class VideoEditorApp(ctk.CTk):
                                 f"All {len(self.loaded_files)} files converted!")
         self._set_progress(0, "Batch starting")
         threading.Thread(target=worker, daemon=True).start()
+
+    def _build_log_panel(self):
+        """Build the modern log panel at the bottom of the UI."""
+        # Main log container with modern styling
+        log_container = ctk.CTkFrame(self, fg_color=BG_DARK, height=160, corner_radius=8)
+        log_container.pack(fill="x", padx=12, pady=(0, 12))
+        log_container.pack_propagate(False)
+        
+        # Header with title and controls
+        header_frame = ctk.CTkFrame(log_container, fg_color="transparent", height=35)
+        header_frame.pack(fill="x", padx=8, pady=(8, 4))
+        header_frame.pack_propagate(False)
+        
+        # Left side - Title with icon
+        title_frame = ctk.CTkFrame(header_frame, fg_color="transparent")
+        title_frame.pack(side="left", fill="x", expand=True)
+        
+        # Animated status indicator
+        self.log_status_label = ctk.CTkLabel(title_frame, text="●", 
+                                           font=ctk.CTkFont(size=14), text_color="#4ade80")
+        self.log_status_label.pack(side="left", padx=(0, 4))
+        
+        ctk.CTkLabel(title_frame, text="📋 Console Output", 
+                    font=ctk.CTkFont(size=13, weight="bold")).pack(side="left")
+        
+        # Log counter
+        self.log_counter = ctk.CTkLabel(title_frame, text="(0)", 
+                                       font=ctk.CTkFont(size=11), text_color=TEXT_MUTED)
+        self.log_counter.pack(side="left", padx=(8, 0))
+        
+        # Right side - Control buttons
+        controls_frame = ctk.CTkFrame(header_frame, fg_color="transparent")
+        controls_frame.pack(side="right")
+        
+        # Modern buttons with hover effects
+        self.clear_log_btn = ctk.CTkButton(controls_frame, text="🗑️ Clear", 
+                                          width=70, height=28, font=ctk.CTkFont(size=11),
+                                          fg_color="#374151", hover_color="#4b5563",
+                                          command=self._clear_log)
+        self.clear_log_btn.pack(side="left", padx=2)
+        
+        self.save_log_btn = ctk.CTkButton(controls_frame, text="💾 Save", 
+                                         width=70, height=28, font=ctk.CTkFont(size=11),
+                                         fg_color="#059669", hover_color="#047857",
+                                         command=self._save_log)
+        self.save_log_btn.pack(side="left", padx=2)
+        
+        self.toggle_log_btn = ctk.CTkButton(controls_frame, text="👁️ Show", 
+                                           width=70, height=28, font=ctk.CTkFont(size=11),
+                                           fg_color="#7c3aed", hover_color="#6d28d9",
+                                           command=self._toggle_log_panel)
+        self.toggle_log_btn.pack(side="left", padx=2)
+        
+        # Log text area with modern styling
+        self.log_frame = ctk.CTkFrame(log_container, fg_color="#0d1117", corner_radius=6)
+        self.log_frame.pack(fill="both", expand=True, padx=8, pady=(0, 8))
+        
+        self.log_text = ctk.CTkTextbox(self.log_frame, height=100, 
+                                      font=ctk.CTkFont(size=10, family="Consolas"),
+                                      fg_color="#0d1117", text_color="#c9d1d9",
+                                      border_width=1, border_color="#30363d",
+                                      corner_radius=4)
+        self.log_text.pack(fill="both", expand=True, padx=6, pady=6)
+        
+        # Configure text tags for different log types
+        self.log_text.tag_config("info", foreground="#58a6ff")
+        self.log_text.tag_config("success", foreground="#3fb950")
+        self.log_text.tag_config("warning", foreground="#d29922")
+        self.log_text.tag_config("error", foreground="#f85149")
+        self.log_text.tag_config("timestamp", foreground="#8b949e")
+        
+        # Initialize log counter
+        self.log_count = 0
+        self.log_panel_visible = True
+        
+    def _log(self, message: str, log_type: str = "info"):
+        """Add a message to the log panel with modern styling."""
+        if hasattr(self, 'log_text'):
+            import datetime
+            timestamp = datetime.datetime.now().strftime("%H:%M:%S")
+            
+            # Update counter
+            self.log_count += 1
+            self.log_counter.configure(text=f"({self.log_count})")
+            
+            # Add message with timestamp and color coding
+            self.log_text.insert("end", f"[{timestamp}] ", "timestamp")
+            self.log_text.insert("end", f"{message}\n", log_type)
+            self.log_text.see("end")
+            
+            # Flash status indicator
+            self._flash_log_status(log_type)
+    
+    def _flash_log_status(self, log_type: str):
+        """Flash the status indicator based on log type."""
+        colors = {
+            "info": "#58a6ff",
+            "success": "#3fb950", 
+            "warning": "#d29922",
+            "error": "#f85149"
+        }
+        color = colors.get(log_type, "#58a6ff")
+        self.log_status_label.configure(text_color=color)
+        
+        # Reset to green after 1 second
+        self.after(1000, lambda: self.log_status_label.configure(text_color="#4ade80"))
+    
+    def _clear_log(self):
+        """Clear the log panel."""
+        if hasattr(self, 'log_text'):
+            self.log_text.delete("1.0", "end")
+            self.log_count = 0
+            self.log_counter.configure(text="(0)")
+    
+    def _save_log(self):
+        """Save log content to a file."""
+        if hasattr(self, 'log_text'):
+            content = self.log_text.get("1.0", "end-1c")
+            if not content.strip():
+                messagebox.showinfo("Info", "Log is empty!")
+                return
+            
+            from tkinter import filedialog
+            filename = filedialog.asksaveasfilename(
+                defaultextension=".txt",
+                filetypes=[("Text files", "*.txt"), ("All files", "*.*")],
+                initialname=f"video_editor_log_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
+            )
+            
+            if filename:
+                try:
+                    with open(filename, 'w', encoding='utf-8') as f:
+                        f.write(content)
+                    messagebox.showinfo("Success", f"Log saved to:\n{filename}")
+                except Exception as e:
+                    messagebox.showerror("Error", f"Failed to save log:\n{str(e)}")
+    
+    def _toggle_log_panel(self):
+        """Toggle log panel visibility."""
+        if self.log_panel_visible:
+            self.log_frame.pack_forget()
+            self.toggle_log_btn.configure(text="👁️ Show")
+            self.log_panel_visible = False
+        else:
+            self.log_frame.pack(fill="both", expand=True, padx=8, pady=(0, 8))
+            self.toggle_log_btn.configure(text="👁️ Hide")
+            self.log_panel_visible = True
 
 
 # ════════════════════════════════════════════════════════════════
