@@ -23,9 +23,15 @@ import threading
 import subprocess
 import signal
 import datetime
+import time
+import webbrowser
+import urllib.parse
+import urllib.request
+import http.server
+import socketserver
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
+from typing import Optional, List
 
 # ─── Third-party ─────────────────────────────────────────────────
 import customtkinter as ctk
@@ -142,6 +148,8 @@ SETTINGS: dict = {
     "transitions":        ["fade","wipe","slide","smoothleft","smoothright","circleopen"],
     "crop_left":          120,
     "crop_top":           82,
+    "crop_right":         0,
+    "crop_bottom":        0,
     "logo": {
         "enabled": False,
         "path":    "Input/logo.png",
@@ -156,6 +164,14 @@ SETTINGS: dict = {
     },
     "pending_dir": "E:/Pythons/Youtube/Pending",
     "done_dir":    "E:/Pythons/Youtube/Done",
+    # ── Automation / Drive / Sheet ──────────────────────────────
+    "apps_script_url":  "",          # Google Apps Script Web App URL
+    "drive_folder_id":  "1iYR7cw9kihjJSYQnpBBCqFEJ7oWQDb00",  # Drive folder
+    "auto_watch":       False,       # Watch Pending folder automatically
+    "upload_to_drive":  True,        # Upload processed video to Drive
+    "update_sheet":     True,        # Update sheet after upload
+    "oauth_token":      "",          # Stored OAuth access token
+    "oauth_expiry":     0,           # Token expiry timestamp
 }
 
 VIDEO_EXTS = {".mp4", ".mov", ".mkv", ".webm", ".m4v", ".avi", ".flv", ".wmv"}
@@ -277,6 +293,18 @@ def run_ffmpeg(cmd: list, progress_callback=None,
         return False, "FFmpeg not found. Install FFmpeg or run: pip install imageio-ffmpeg"
     if cmd and cmd[0] in ("ffmpeg", "ffmpeg.exe"):
         cmd = [FFMPEG_BIN] + cmd[1:]
+
+    # If filters are used, ffmpeg must re-encode video. Default to a faster preset
+    # when the caller didn't provide explicit video encoding settings.
+    has_filter = ("-vf" in cmd) or ("-filter_complex" in cmd)
+    has_vcodec = ("-c:v" in cmd) or ("-c" in cmd)
+    if has_filter and not has_vcodec:
+        try:
+            out_i = len(cmd) - 1
+            cmd = cmd[:out_i] + ["-c:v", "libx264", "-preset", "veryfast", "-crf", "23"] + cmd[out_i:]
+        except Exception:
+            pass
+
     proc: Optional[subprocess.Popen] = None
     try:
         proc = subprocess.Popen(cmd, stderr=subprocess.PIPE,
@@ -285,7 +313,9 @@ def run_ffmpeg(cmd: list, progress_callback=None,
         _register_proc(proc)
         duration_sec = None
         ce = cancel_event or _CANCEL_EVENT
+        err_lines: List[str] = []
         for line in proc.stderr:
+            err_lines.append(line)
             if line_callback:
                 try:
                     line_callback(line.rstrip("\n"))
@@ -296,6 +326,13 @@ def run_ffmpeg(cmd: list, progress_callback=None,
                     proc.terminate()
                 except Exception:
                     pass
+                try:
+                    proc.wait(timeout=1.0)
+                except Exception:
+                    try:
+                        proc.kill()
+                    except Exception:
+                        pass
             if duration_sec is None:
                 m = re.search(r'Duration:\s*(\d+):(\d+):(\d+\.\d+)', line)
                 if m:
@@ -311,7 +348,10 @@ def run_ffmpeg(cmd: list, progress_callback=None,
         proc.wait()
         if progress_callback:
             progress_callback(100)
-        return proc.returncode == 0, ""
+        if proc.returncode == 0:
+            return True, ""
+        tail = "".join(err_lines[-80:])
+        return False, tail.strip() or "FFmpeg failed."
     except Exception as e:
         return False, str(e)
     finally:
@@ -484,13 +524,15 @@ def render_with_transitions(input_path: Path, output_path: Path,
     if not segments:
         return False, "No segments provided."
 
+    cl      = SETTINGS.get("crop_left",   0)
+    ct      = SETTINGS.get("crop_top",    0)
+    cr      = SETTINGS.get("crop_right",  0)
+    cb      = SETTINGS.get("crop_bottom", 0)
+    # FFmpeg crop: w = iw - left - right,  h = ih - top - bottom,  x = left,  y = top
+    base_vf = f"crop=iw-{cl}-{cr}:ih-{ct}-{cb}:{cl}:{ct},scale=-2:{profile.height}"
     fade    = SETTINGS["fade_seconds"]
-    cl      = SETTINGS["crop_left"]
-    ct      = SETTINGS["crop_top"]
     logo    = SETTINGS["logo"]
     add_logo = logo["enabled"] and logo["path"] and Path(logo["path"]).exists()
-
-    base_vf = f"crop=iw-{cl}-1:ih-{ct}:{cl}:{ct},scale=-2:{profile.height}"
     ff      = FFMPEG_BIN or "ffmpeg"
 
     output_parent = output_path.parent
@@ -644,12 +686,270 @@ def concat_ending(main_path: Path, ending_path: Path,
 
 
 # ════════════════════════════════════════════════════════════════
+#  GOOGLE OAUTH  (browser-based, same account as dashboard)
+#  Uses Drive + Sheets scopes. Token stored in settings.json
+# ════════════════════════════════════════════════════════════════
+OAUTH_CLIENT_ID     = "165516915479-27ks2km5q9sbod00uvsdmda3vfgf0toa.apps.googleusercontent.com"
+OAUTH_CLIENT_SECRET = ""   # Not needed for PKCE / implicit flow via browser
+OAUTH_REDIRECT_PORT = 9876
+OAUTH_SCOPES        = "https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/userinfo.email"
+
+_oauth_token_cache: dict = {}   # {access_token, expiry}
+
+
+def get_oauth_token() -> Optional[str]:
+    """Return a valid OAuth token from cache/settings, or None if not authed."""
+    # Check in-memory cache first
+    token = _oauth_token_cache.get("access_token", "")
+    expiry = _oauth_token_cache.get("expiry", 0)
+    if token and time.time() < expiry - 60:
+        return token
+    # Check settings
+    token = SETTINGS.get("oauth_token", "")
+    expiry = SETTINGS.get("oauth_expiry", 0)
+    if token and time.time() < expiry - 60:
+        _oauth_token_cache["access_token"] = token
+        _oauth_token_cache["expiry"]       = expiry
+        return token
+    return None
+
+
+def set_oauth_token(token: str, expires_in: int = 3600) -> None:
+    """Store token in memory and settings."""
+    expiry = time.time() + expires_in
+    _oauth_token_cache["access_token"] = token
+    _oauth_token_cache["expiry"]       = expiry
+    SETTINGS["oauth_token"]  = token
+    SETTINGS["oauth_expiry"] = expiry
+    save_settings()
+
+
+def start_oauth_flow(on_success=None, on_error=None) -> None:
+    """
+    Open browser for Google OAuth. Starts a local server on port 9876 to
+    receive the redirect with the auth code, then exchanges for access token.
+    Calls on_success(token) or on_error(msg) on the main thread via callbacks.
+    """
+    import secrets, hashlib, base64
+
+    # ── PKCE code verifier / challenge ──────────────────────────
+    code_verifier  = base64.urlsafe_b64encode(secrets.token_bytes(32)).rstrip(b"=").decode()
+    code_challenge = base64.urlsafe_b64encode(
+        hashlib.sha256(code_verifier.encode()).digest()
+    ).rstrip(b"=").decode()
+
+    redirect_uri = f"http://localhost:{OAUTH_REDIRECT_PORT}"
+    params = {
+        "client_id":             OAUTH_CLIENT_ID,
+        "redirect_uri":          redirect_uri,
+        "response_type":         "code",
+        "scope":                 OAUTH_SCOPES,
+        "access_type":           "offline",
+        "code_challenge":        code_challenge,
+        "code_challenge_method": "S256",
+        "prompt":                "consent",
+    }
+    auth_url = "https://accounts.google.com/o/oauth2/v2/auth?" + urllib.parse.urlencode(params)
+
+    result_holder = [None]   # ["token"] or ["error:msg"]
+    done_event    = threading.Event()
+
+    class _Handler(http.server.BaseHTTPRequestHandler):
+        def log_message(self, *args): pass   # silence server logs
+
+        def do_GET(self):
+            parsed = urllib.parse.urlparse(self.path)
+            qs     = urllib.parse.parse_qs(parsed.query)
+            code   = qs.get("code", [None])[0]
+            error  = qs.get("error", [None])[0]
+
+            if error:
+                result_holder[0] = f"error:{error}"
+                self._respond("<h2>Auth failed. Close this tab.</h2>")
+            elif code:
+                # Exchange code for token
+                try:
+                    token_data = urllib.parse.urlencode({
+                        "code":          code,
+                        "client_id":     OAUTH_CLIENT_ID,
+                        "redirect_uri":  redirect_uri,
+                        "grant_type":    "authorization_code",
+                        "code_verifier": code_verifier,
+                    }).encode()
+                    req  = urllib.request.Request(
+                        "https://oauth2.googleapis.com/token",
+                        data=token_data,
+                        headers={"Content-Type": "application/x-www-form-urlencoded"}
+                    )
+                    resp = urllib.request.urlopen(req, timeout=15)
+                    td   = json.loads(resp.read().decode())
+                    result_holder[0] = td.get("access_token", "")
+                    expires_in = int(td.get("expires_in", 3600))
+                    set_oauth_token(result_holder[0], expires_in)
+                    self._respond("<h2 style='color:green'>✅ Signed in! You can close this tab.</h2>")
+                except Exception as e:
+                    result_holder[0] = f"error:{e}"
+                    self._respond("<h2 style='color:red'>Token exchange failed. Close tab.</h2>")
+            else:
+                self._respond("<h2>No code received.</h2>")
+            done_event.set()
+
+        def _respond(self, body: str):
+            html = f"<html><body style='font-family:sans-serif;padding:40px'>{body}</body></html>"
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html")
+            self.end_headers()
+            self.wfile.write(html.encode())
+
+    def server_thread():
+        with socketserver.TCPServer(("", OAUTH_REDIRECT_PORT), _Handler) as srv:
+            srv.timeout = 120   # wait max 2 min for redirect
+            srv.handle_request()
+        # Process result
+        r = result_holder[0] or "error:timeout"
+        if r.startswith("error:"):
+            if on_error: on_error(r[6:])
+        else:
+            if on_success: on_success(r)
+        done_event.set()
+
+    threading.Thread(target=server_thread, daemon=True).start()
+    webbrowser.open(auth_url)
+
+
+# ════════════════════════════════════════════════════════════════
+#  GOOGLE DRIVE UPLOAD  (resumable for large files)
+# ════════════════════════════════════════════════════════════════
+def drive_upload_file(local_path: Path, folder_id: str,
+                      on_progress=None) -> Optional[str]:
+    """
+    Upload a file to Google Drive. Returns shareable URL or None on failure.
+    on_progress(pct 0-100) called during upload.
+    """
+    token = get_oauth_token()
+    if not token:
+        raise RuntimeError("Not signed in to Google. Use Automation tab → Sign In.")
+
+    file_size = local_path.stat().st_size
+    mime_type = "video/mp4"
+
+    # ── Initiate resumable upload session ──────────────────────
+    meta = json.dumps({
+        "name":    local_path.name,
+        "parents": [folder_id] if folder_id else [],
+    }).encode()
+
+    init_req = urllib.request.Request(
+        "https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable",
+        data=meta,
+        headers={
+            "Authorization":         f"Bearer {token}",
+            "Content-Type":          "application/json",
+            "X-Upload-Content-Type": mime_type,
+            "X-Upload-Content-Length": str(file_size),
+        },
+        method="POST"
+    )
+    resp = urllib.request.urlopen(init_req, timeout=30)
+    upload_url = resp.headers.get("Location")
+    if not upload_url:
+        raise RuntimeError("Drive did not return upload URL.")
+
+    # ── Upload in chunks ────────────────────────────────────────
+    CHUNK = 5 * 1024 * 1024   # 5 MB chunks
+    offset = 0
+    file_id = None
+
+    with open(local_path, "rb") as f:
+        while offset < file_size:
+            chunk_data = f.read(CHUNK)
+            end_byte   = offset + len(chunk_data) - 1
+            headers    = {
+                "Content-Range":  f"bytes {offset}-{end_byte}/{file_size}",
+                "Content-Type":   mime_type,
+            }
+            req  = urllib.request.Request(upload_url, data=chunk_data,
+                                          headers=headers, method="PUT")
+            try:
+                r    = urllib.request.urlopen(req, timeout=120)
+                body = json.loads(r.read().decode())
+                file_id = body.get("id")
+                offset  = file_size
+                if on_progress: on_progress(100)
+            except urllib.error.HTTPError as e:
+                if e.code == 308:   # Resume Incomplete
+                    rng = e.headers.get("Range", f"bytes=0-{end_byte}")
+                    offset = int(rng.split("-")[1]) + 1
+                    if on_progress: on_progress(int(offset / file_size * 100))
+                else:
+                    raise RuntimeError(f"Drive upload error {e.code}: {e.read().decode()}")
+
+    if not file_id:
+        raise RuntimeError("Upload finished but no file ID returned.")
+
+    # ── Make file publicly readable ─────────────────────────────
+    perm_data = json.dumps({"role": "reader", "type": "anyone"}).encode()
+    perm_req  = urllib.request.Request(
+        f"https://www.googleapis.com/drive/v3/files/{file_id}/permissions",
+        data=perm_data,
+        headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+        method="POST"
+    )
+    urllib.request.urlopen(perm_req, timeout=15)
+
+    return f"https://drive.google.com/file/d/{file_id}/view"
+
+
+# ════════════════════════════════════════════════════════════════
+#  APPS SCRIPT — save Drive URL + set status to Ready
+# ════════════════════════════════════════════════════════════════
+def sheet_save_video_url(story_title: str, drive_url: str,
+                         script_url: str) -> bool:
+    """
+    POST to Apps Script to save Drive Video URL and set status → Ready.
+    Returns True on success.
+    """
+    if not script_url:
+        return False
+    payload = json.dumps({
+        "action":     "saveFileUrl",
+        "storyTitle": story_title,
+        "urlField":   "videoUrl",
+        "url":        drive_url,
+    }).encode()
+    try:
+        req  = urllib.request.Request(
+            script_url, data=payload,
+            headers={"Content-Type": "application/json"},
+            method="POST"
+        )
+        urllib.request.urlopen(req, timeout=20)
+        return True
+    except Exception:
+        return False
+
+
+def sheet_fetch_stories(script_url: str) -> List[dict]:
+    """Fetch stories list from Apps Script. Returns list of story dicts."""
+    if not script_url:
+        return []
+    try:
+        url  = f"{script_url}?action=getStories"
+        req  = urllib.request.Request(url)
+        resp = urllib.request.urlopen(req, timeout=15)
+        data = json.loads(resp.read().decode())
+        return data.get("stories", [])
+    except Exception:
+        return []
+
+
+# ════════════════════════════════════════════════════════════════
 #  THEME CONSTANTS
 # ════════════════════════════════════════════════════════════════
 ctk.set_appearance_mode("dark")
 ctk.set_default_color_theme("blue")
 
-APP_VERSION  = "2.0.0"
+APP_VERSION  = "3.0.0"
 ACCENT       = "#1f6feb"
 BG_DARK      = "#0d1117"
 BG_CARD      = "#161b22"
@@ -851,7 +1151,7 @@ class SettingsDialog(ctk.CTkToplevel):
 class VideoEditorApp(ctk.CTk):
     def __init__(self):
         super().__init__()
-        self.title("🎬 Pro Video Editor v2.0")
+        self.title("🎬 Pro Video Editor v3.0 — Bright Little Stories")
         self.geometry("1320x820")
         self.minsize(1100, 700)
         self.configure(fg_color=BG_DARK)
@@ -993,6 +1293,7 @@ class VideoEditorApp(ctk.CTk):
 
         for name, builder in [
             ("🤖 Auto Batch",      self._build_batch_tab),
+            ("☁️ Automation",      self._build_automation_tab),
             ("✂️ Trim / Split",    self._build_trim_tab),
             ("🔗 Merge",           self._build_merge_tab),
             ("📝 Text & Subtitles",self._build_text_tab),
@@ -1007,88 +1308,552 @@ class VideoEditorApp(ctk.CTk):
             builder(self.tabs.tab(name))
 
     # ════════════════════════════════════════════════════════
-    #  TAB 0 — AUTO BATCH  (Script 1 engine, GUI front-end)
+    #  TAB 0 — AUTO BATCH  (redesigned per PDF)
     # ════════════════════════════════════════════════════════
     def _build_batch_tab(self, parent):
-        self._section_title(parent, "🤖 Auto Batch Processor")
 
-        # --- Folder settings ---
-        card = self._card(parent, "📂 Folder Settings")
+        # ── TOP ROW: Folders + Logo/Ending toggles ───────────────
+        top_row = ctk.CTkFrame(parent, fg_color="transparent")
+        top_row.pack(fill="x", padx=8, pady=(8, 4))
 
-        row1 = ctk.CTkFrame(card, fg_color="transparent")
-        row1.pack(fill="x", pady=3)
-        ctk.CTkLabel(row1, text="Pending folder:", width=140, anchor="w").pack(side="left")
+        # Folder settings card (left)
+        folder_card = ctk.CTkFrame(top_row, fg_color=BG_CARD, corner_radius=8)
+        folder_card.pack(side="left", fill="x", expand=True, padx=(0, 6))
+
+        ctk.CTkLabel(folder_card, text="📂 FOLDERS",
+                     font=ctk.CTkFont(size=11, weight="bold"),
+                     text_color=ACCENT).pack(anchor="w", padx=10, pady=(8, 2))
+
+        r1 = ctk.CTkFrame(folder_card, fg_color="transparent")
+        r1.pack(fill="x", padx=10, pady=2)
+        ctk.CTkLabel(r1, text="Pending:", width=60, anchor="w",
+                     font=ctk.CTkFont(size=11)).pack(side="left")
         self.batch_pending_var = tk.StringVar(value=SETTINGS["pending_dir"])
-        ctk.CTkEntry(row1, textvariable=self.batch_pending_var, width=240).pack(side="left", padx=8)
-        ctk.CTkButton(row1, text="Browse", width=80,
-                      command=lambda: self._browse_dir(self.batch_pending_var)).pack(side="left")
+        ctk.CTkEntry(r1, textvariable=self.batch_pending_var,
+                     width=220).pack(side="left", padx=4)
+        ctk.CTkButton(r1, text="📁", width=32, height=28,
+                      command=lambda: self._browse_dir(self.batch_pending_var)
+                      ).pack(side="left")
 
-        row2 = ctk.CTkFrame(card, fg_color="transparent")
-        row2.pack(fill="x", pady=3)
-        ctk.CTkLabel(row2, text="Done folder:", width=140, anchor="w").pack(side="left")
+        r2 = ctk.CTkFrame(folder_card, fg_color="transparent")
+        r2.pack(fill="x", padx=10, pady=(2, 8))
+        ctk.CTkLabel(r2, text="Done:", width=60, anchor="w",
+                     font=ctk.CTkFont(size=11)).pack(side="left")
         self.batch_done_var = tk.StringVar(value=SETTINGS["done_dir"])
-        ctk.CTkEntry(row2, textvariable=self.batch_done_var, width=240).pack(side="left", padx=8)
-        ctk.CTkButton(row2, text="Browse", width=80,
-                      command=lambda: self._browse_dir(self.batch_done_var)).pack(side="left")
+        ctk.CTkEntry(r2, textvariable=self.batch_done_var,
+                     width=220).pack(side="left", padx=4)
+        ctk.CTkButton(r2, text="📁", width=32, height=28,
+                      command=lambda: self._browse_dir(self.batch_done_var)
+                      ).pack(side="left")
 
-        # --- Profile ---
-        card2 = self._card(parent, "🎯 YouTube Export Profile")
-        row3 = ctk.CTkFrame(card2, fg_color="transparent")
-        row3.pack(fill="x", pady=3)
-        ctk.CTkLabel(row3, text="Profile:", width=140, anchor="w").pack(side="left")
+        # Logo / End Screen toggles card (right)
+        toggle_card = ctk.CTkFrame(top_row, fg_color=BG_CARD, corner_radius=8)
+        toggle_card.pack(side="left", padx=(0, 0), ipadx=8, ipady=4)
+
+        ctk.CTkLabel(toggle_card, text="🎨 OVERLAYS",
+                     font=ctk.CTkFont(size=11, weight="bold"),
+                     text_color=ACCENT).pack(anchor="w", padx=10, pady=(8, 4))
+
+        self.batch_logo_var   = tk.BooleanVar(value=SETTINGS["logo"]["enabled"])
+        self.batch_ending_var = tk.BooleanVar(value=SETTINGS["ending"]["enabled"])
+
+        ctk.CTkCheckBox(toggle_card, text="🖼️ Logo Overlay",
+                        variable=self.batch_logo_var,
+                        font=ctk.CTkFont(size=11)).pack(anchor="w", padx=12, pady=2)
+        ctk.CTkCheckBox(toggle_card, text="🎬 End Screen",
+                        variable=self.batch_ending_var,
+                        font=ctk.CTkFont(size=11)).pack(anchor="w", padx=12, pady=(2, 10))
+
+        # ── MIDDLE ROW: Crop | Transitions | Export Profile ──────
+        mid_row = ctk.CTkFrame(parent, fg_color="transparent")
+        mid_row.pack(fill="x", padx=8, pady=4)
+
+        # Crop values card
+        crop_card = ctk.CTkFrame(mid_row, fg_color=BG_CARD, corner_radius=8)
+        crop_card.pack(side="left", padx=(0, 6), ipadx=6, ipady=4)
+
+        ctk.CTkLabel(crop_card, text="✂️ CROP (px)",
+                     font=ctk.CTkFont(size=11, weight="bold"),
+                     text_color=ACCENT).pack(anchor="w", padx=10, pady=(8, 4))
+
+        crop_grid = ctk.CTkFrame(crop_card, fg_color="transparent")
+        crop_grid.pack(padx=10, pady=(0, 8))
+
+        self.crop_left_var   = tk.StringVar(value=str(SETTINGS.get("crop_left",   120)))
+        self.crop_top_var    = tk.StringVar(value=str(SETTINGS.get("crop_top",     82)))
+        self.crop_right_var  = tk.StringVar(value=str(SETTINGS.get("crop_right",    0)))
+        self.crop_bottom_var = tk.StringVar(value=str(SETTINGS.get("crop_bottom",   0)))
+
+        for label, var, row, col in [
+            ("TOP",    self.crop_top_var,    0, 1),
+            ("LEFT",   self.crop_left_var,   1, 0),
+            ("RIGHT",  self.crop_right_var,  1, 2),
+            ("BOTTOM", self.crop_bottom_var, 2, 1),
+        ]:
+            f = ctk.CTkFrame(crop_grid, fg_color="transparent")
+            f.grid(row=row, column=col, padx=4, pady=2)
+            ctk.CTkLabel(f, text=label, font=ctk.CTkFont(size=9),
+                         text_color=TEXT_MUTED).pack()
+            ctk.CTkEntry(f, textvariable=var, width=56,
+                         font=ctk.CTkFont(size=11)).pack()
+
+        # Transitions card
+        trans_card = ctk.CTkFrame(mid_row, fg_color=BG_CARD, corner_radius=8)
+        trans_card.pack(side="left", fill="y", padx=(0, 6), ipadx=6, ipady=4)
+
+        ctk.CTkLabel(trans_card, text="🎭 TRANSITIONS",
+                     font=ctk.CTkFont(size=11, weight="bold"),
+                     text_color=ACCENT).pack(anchor="w", padx=10, pady=(8, 4))
+
+        self.trans_random_var = tk.BooleanVar(value=SETTINGS.get("random_transitions", True))
+        ctk.CTkCheckBox(trans_card, text="🎲 Random",
+                        variable=self.trans_random_var,
+                        font=ctk.CTkFont(size=11)).pack(anchor="w", padx=10, pady=2)
+
+        # Individual transition toggles
+        self._trans_vars = {}
+        all_trans = ["fade", "wipe", "slide", "smoothleft", "smoothright", "circleopen"]
+        enabled   = SETTINGS.get("transitions", all_trans)
+        for t in all_trans:
+            v = tk.BooleanVar(value=t in enabled)
+            self._trans_vars[t] = v
+            ctk.CTkCheckBox(trans_card, text=t, variable=v,
+                            font=ctk.CTkFont(size=10)).pack(anchor="w", padx=20, pady=1)
+
+        # Export profile + options card
+        opt_card = ctk.CTkFrame(mid_row, fg_color=BG_CARD, corner_radius=8)
+        opt_card.pack(side="left", fill="y", ipadx=6, ipady=4)
+
+        ctk.CTkLabel(opt_card, text="📤 EXPORT & OPTIONS",
+                     font=ctk.CTkFont(size=11, weight="bold"),
+                     text_color=ACCENT).pack(anchor="w", padx=10, pady=(8, 4))
+
         profile_names = [f"{k}: {p.label}" for k, p in YOUTUBE_PROFILES.items()]
-        self.batch_profile_var = ctk.CTkComboBox(row3, values=profile_names, width=260)
-        self.batch_profile_var.set(profile_names[3])  # default 720p
-        self.batch_profile_var.pack(side="left", padx=8)
+        self.batch_profile_var = ctk.CTkComboBox(opt_card, values=profile_names, width=200)
+        self.batch_profile_var.set(profile_names[3])  # 720p default
+        self.batch_profile_var.pack(padx=10, pady=(0, 6))
 
-        # --- Options ---
-        card3 = self._card(parent, "⚙️ Batch Options")
-
-        opt_row = ctk.CTkFrame(card3, fg_color="transparent")
-        opt_row.pack(fill="x", pady=3)
         self.batch_scene_var  = tk.BooleanVar(value=True)
         self.batch_trim_var   = tk.BooleanVar(value=True)
-        self.batch_ending_var = tk.BooleanVar(value=SETTINGS["ending"]["enabled"])
         self.batch_delete_var = tk.BooleanVar(value=True)
+        self.batch_upload_drive_var = tk.BooleanVar(
+            value=SETTINGS.get("upload_to_drive", True))
 
         for text, var in [
-            ("Auto scene detection",     self.batch_scene_var),
-            ("Trim end (remove last N sec)", self.batch_trim_var),
-            ("Append ending video",      self.batch_ending_var),
-            ("Delete source after done", self.batch_delete_var),
+            ("🔍 Auto scene detection",    self.batch_scene_var),
+            ("✂️ Trim end (last N sec)",   self.batch_trim_var),
+            ("🗑️ Delete source after done",self.batch_delete_var),
+            ("☁️ Upload to Drive after",   self.batch_upload_drive_var),
         ]:
-            ctk.CTkCheckBox(opt_row, text=text, variable=var,
-                            font=ctk.CTkFont(size=11)).pack(side="left", padx=12, pady=2)
+            ctk.CTkCheckBox(opt_card, text=text, variable=var,
+                            font=ctk.CTkFont(size=10)).pack(anchor="w", padx=10, pady=2)
 
-        # --- File count ---
-        card4 = self._card(parent, "🚀 Run Batch")
-        ctk.CTkLabel(card4,
-                     text="This will process all video files in the Pending folder:\n"
-                          "  • Auto crop watermark area (crop_left/crop_top from settings)\n"
-                          "  • Detect scene changes → show popup to choose which to keep\n"
-                          "  • Apply xfade transitions between scenes\n"
-                          "  • Trim N seconds from end\n"
-                          "  • Optionally append ending video\n"
-                          "  • Save to Done folder and delete source",
-                     font=ctk.CTkFont(size=11), text_color=TEXT_MUTED,
-                     justify="left").pack(anchor="w", pady=6)
+        # ── LEFT: File list + preview | RIGHT: Details ───────────
+        body_row = ctk.CTkFrame(parent, fg_color="transparent")
+        body_row.pack(fill="both", expand=True, padx=8, pady=4)
 
-        btn_row = ctk.CTkFrame(card4, fg_color="transparent")
-        btn_row.pack(fill="x", pady=8)
-        ctk.CTkButton(btn_row, text="📂 Scan Pending Folder", width=180, height=36,
-                      command=self._batch_scan).pack(side="left", padx=4)
+        # Left — pending files list
+        list_card = ctk.CTkFrame(body_row, fg_color=BG_CARD, corner_radius=8)
+        list_card.pack(side="left", fill="both", expand=True, padx=(0, 6))
+
+        list_header = ctk.CTkFrame(list_card, fg_color="transparent")
+        list_header.pack(fill="x", padx=10, pady=(8, 2))
+        ctk.CTkLabel(list_header, text="📋 PENDING VIDEOS",
+                     font=ctk.CTkFont(size=11, weight="bold"),
+                     text_color=ACCENT).pack(side="left")
+
+        sel_row = ctk.CTkFrame(list_card, fg_color="transparent")
+        sel_row.pack(fill="x", padx=10, pady=2)
+        ctk.CTkButton(sel_row, text="Select All", width=90, height=26,
+                      command=self._batch_select_all).pack(side="left", padx=2)
+        ctk.CTkButton(sel_row, text="Select None", width=90, height=26,
+                      command=self._batch_select_none).pack(side="left", padx=2)
+        ctk.CTkButton(sel_row, text="🔄 Scan", width=80, height=26,
+                      command=self._batch_scan).pack(side="left", padx=2)
+
+        self.batch_listbox = tk.Listbox(
+            list_card, bg=BG_DARK, fg=TEXT_PRIMARY,
+            selectbackground=ACCENT, borderwidth=0,
+            highlightthickness=0, font=("Consolas", 10),
+            height=10, selectmode="extended",
+        )
+        self.batch_listbox.pack(fill="both", expand=True, padx=8, pady=4)
+        self.batch_listbox.bind("<<ListboxSelect>>", self._on_batch_select)
+
+        # Right — scene/frame details panel
+        detail_card = ctk.CTkFrame(body_row, fg_color=BG_CARD, corner_radius=8, width=260)
+        detail_card.pack(side="left", fill="y")
+        detail_card.pack_propagate(False)
+
+        ctk.CTkLabel(detail_card, text="🎞️ FRAME DETAILS",
+                     font=ctk.CTkFont(size=11, weight="bold"),
+                     text_color=ACCENT).pack(anchor="w", padx=10, pady=(8, 4))
+
+        self.batch_details = ctk.CTkTextbox(
+            detail_card, font=ctk.CTkFont(size=10, family="Consolas"),
+            fg_color=BG_DARK, text_color=TEXT_PRIMARY,
+            border_color="#30363d", border_width=1, corner_radius=6)
+        self.batch_details.pack(fill="both", expand=True, padx=8, pady=(0, 8))
+        self.batch_details.insert("end", "Select a file and scan\nto see frame details...")
+        self.batch_details.configure(state="disabled")
+
+        # ── STATUS BAR ───────────────────────────────────────────
+        self.batch_status = ctk.CTkLabel(parent, text="",
+                                          font=ctk.CTkFont(size=11),
+                                          text_color=TEXT_MUTED)
+        self.batch_status.pack(anchor="w", padx=12, pady=2)
+
+        # ── BIG ACTION BUTTONS ────────────────────────────────────
+        btn_row = ctk.CTkFrame(parent, fg_color="transparent")
+        btn_row.pack(fill="x", padx=8, pady=(4, 8))
+
+        ctk.CTkButton(btn_row, text="⛔ STOP", width=100, height=42,
+                      fg_color=DANGER, hover_color="#b91c1c",
+                      font=ctk.CTkFont(size=13, weight="bold"),
+                      command=self._on_cancel).pack(side="left", padx=4)
+
+        ctk.CTkButton(btn_row, text="📁 OUTPUT", width=110, height=42,
+                      fg_color=BG_SIDEBAR, hover_color="#30363d",
+                      font=ctk.CTkFont(size=12),
+                      command=self._pick_output_dir).pack(side="left", padx=4)
+
+        ctk.CTkButton(btn_row, text="⚙ SETTINGS", width=120, height=42,
+                      fg_color=BG_SIDEBAR, hover_color="#30363d",
+                      font=ctk.CTkFont(size=12),
+                      command=lambda: SettingsDialog(self)).pack(side="left", padx=4)
+
         self.batch_run_btn = ctk.CTkButton(
-            btn_row, text="🚀 Start Batch Processing", width=200, height=36,
-            fg_color=PURPLE, hover_color="#5a32a3",
-            command=self._batch_run)
-        self.batch_run_btn.pack(side="left", padx=4)
+            btn_row, text="▶ PROCESS", width=180, height=42,
+            fg_color="#1f6feb", hover_color="#1558c0",
+            font=ctk.CTkFont(size=14, weight="bold"),
+            command=self._batch_run, state="disabled")
+        self.batch_run_btn.pack(side="right", padx=4)
 
-        self.batch_status = ctk.CTkLabel(card4, text="",
-                                          font=ctk.CTkFont(size=11), text_color=TEXT_MUTED)
-        self.batch_status.pack(anchor="w", pady=4)
+        # Progress bar at very bottom
+        self.batch_progress_bar = ctk.CTkProgressBar(parent, height=10,
+                                                      progress_color=ACCENT)
+        self.batch_progress_bar.pack(fill="x", padx=8, pady=(0, 4))
+        self.batch_progress_bar.set(0)
+
+        # state
+        self.batch_files_infos = []
 
     # ════════════════════════════════════════════════════════
-    #  TAB 1 — TRIM / SPLIT
+    #  TAB 1 — AUTOMATION (Drive + Sheet integration)
+    # ════════════════════════════════════════════════════════
+    def _build_automation_tab(self, parent):
+        self._section_title(parent, "☁️ Automation — Drive + Sheet Integration")
+
+        # ── Google Sign In ────────────────────────────────────────
+        auth_card = self._card(parent, "🔐 Google Account")
+
+        self.auto_auth_status = ctk.CTkLabel(
+            auth_card,
+            text="⚠ Not signed in — click Sign In to connect Google Drive",
+            font=ctk.CTkFont(size=11), text_color=WARNING)
+        self.auto_auth_status.pack(anchor="w", pady=(0, 6))
+
+        auth_btn_row = ctk.CTkFrame(auth_card, fg_color="transparent")
+        auth_btn_row.pack(fill="x")
+        self.auto_signin_btn = ctk.CTkButton(
+            auth_btn_row, text="🔐 Sign In with Google",
+            width=180, height=34, fg_color=ACCENT,
+            command=self._auto_signin)
+        self.auto_signin_btn.pack(side="left", padx=4)
+        ctk.CTkButton(auth_btn_row, text="Sign Out", width=100, height=34,
+                      fg_color=BG_SIDEBAR, hover_color="#30363d",
+                      command=self._auto_signout).pack(side="left", padx=4)
+
+        # Check if already signed in
+        if get_oauth_token():
+            self.auto_auth_status.configure(
+                text="✅ Signed in to Google Drive", text_color=SUCCESS)
+
+        # ── Apps Script URL ───────────────────────────────────────
+        cfg_card = self._card(parent, "⚙️ Configuration")
+
+        r1 = ctk.CTkFrame(cfg_card, fg_color="transparent")
+        r1.pack(fill="x", pady=3)
+        ctk.CTkLabel(r1, text="Apps Script URL:", width=160, anchor="w",
+                     font=ctk.CTkFont(size=11)).pack(side="left")
+        self.auto_script_url = ctk.CTkEntry(r1, width=440,
+                                             placeholder_text="https://script.google.com/macros/s/.../exec")
+        self.auto_script_url.insert(0, SETTINGS.get("apps_script_url", ""))
+        self.auto_script_url.pack(side="left", padx=8)
+
+        r2 = ctk.CTkFrame(cfg_card, fg_color="transparent")
+        r2.pack(fill="x", pady=3)
+        ctk.CTkLabel(r2, text="Drive Folder ID:", width=160, anchor="w",
+                     font=ctk.CTkFont(size=11)).pack(side="left")
+        self.auto_folder_id = ctk.CTkEntry(r2, width=440,
+                                            placeholder_text="1iYR7cw9kihjJSYQnpBBCqFEJ7oWQDb00")
+        self.auto_folder_id.insert(0, SETTINGS.get("drive_folder_id", ""))
+        self.auto_folder_id.pack(side="left", padx=8)
+
+        ctk.CTkButton(cfg_card, text="💾 Save Config", width=140, height=32,
+                      fg_color=SUCCESS, hover_color="#196129",
+                      command=self._auto_save_config).pack(anchor="w", pady=(6, 2))
+
+        # ── Manual Upload ──────────────────────────────────────────
+        upload_card = self._card(parent, "☁️ Manual Upload — Select File → Story → Upload")
+
+        sel_row = ctk.CTkFrame(upload_card, fg_color="transparent")
+        sel_row.pack(fill="x", pady=4)
+
+        ctk.CTkButton(sel_row, text="📁 Select Processed Video",
+                      width=200, height=34, command=self._auto_pick_video
+                      ).pack(side="left", padx=4)
+        self.auto_video_label = ctk.CTkLabel(
+            sel_row, text="No file selected",
+            font=ctk.CTkFont(size=10), text_color=TEXT_MUTED)
+        self.auto_video_label.pack(side="left", padx=8)
+
+        story_row = ctk.CTkFrame(upload_card, fg_color="transparent")
+        story_row.pack(fill="x", pady=4)
+        ctk.CTkLabel(story_row, text="Match to Story:", width=120, anchor="w",
+                     font=ctk.CTkFont(size=11)).pack(side="left")
+        self.auto_story_var = tk.StringVar(value="-- Fetch stories first --")
+        self.auto_story_combo = ctk.CTkComboBox(
+            story_row, variable=self.auto_story_var,
+            values=["-- Fetch stories first --"], width=360)
+        self.auto_story_combo.pack(side="left", padx=8)
+        ctk.CTkButton(story_row, text="🔄 Fetch", width=80, height=30,
+                      command=self._auto_fetch_stories).pack(side="left", padx=4)
+
+        upload_btn_row = ctk.CTkFrame(upload_card, fg_color="transparent")
+        upload_btn_row.pack(fill="x", pady=6)
+        ctk.CTkButton(upload_btn_row, text="☁️ UPLOAD TO DRIVE + UPDATE SHEET",
+                      width=300, height=40,
+                      fg_color=ACCENT, hover_color="#1558c0",
+                      font=ctk.CTkFont(size=12, weight="bold"),
+                      command=self._auto_upload).pack(side="left", padx=4)
+
+        self.auto_upload_progress = ctk.CTkProgressBar(upload_card, height=8)
+        self.auto_upload_progress.pack(fill="x", pady=(6, 2))
+        self.auto_upload_progress.set(0)
+
+        self.auto_upload_status = ctk.CTkLabel(
+            upload_card, text="",
+            font=ctk.CTkFont(size=11), text_color=TEXT_MUTED)
+        self.auto_upload_status.pack(anchor="w", pady=2)
+
+        # ── Auto-Watch ────────────────────────────────────────────
+        watch_card = self._card(parent, "👁️ Auto-Watch Pending Folder")
+
+        ctk.CTkLabel(watch_card,
+                     text="When enabled: any new video dropped in Pending folder\n"
+                          "will be auto-processed, uploaded to Drive, and sheet updated.",
+                     font=ctk.CTkFont(size=11), text_color=TEXT_MUTED,
+                     justify="left").pack(anchor="w", pady=(0, 6))
+
+        watch_row = ctk.CTkFrame(watch_card, fg_color="transparent")
+        watch_row.pack(fill="x")
+        self.auto_watch_var = tk.BooleanVar(value=SETTINGS.get("auto_watch", False))
+        ctk.CTkCheckBox(watch_row, text="Enable Auto-Watch",
+                        variable=self.auto_watch_var,
+                        font=ctk.CTkFont(size=11),
+                        command=self._auto_toggle_watch).pack(side="left", padx=4)
+        self.auto_watch_status = ctk.CTkLabel(
+            watch_row, text="● Inactive",
+            font=ctk.CTkFont(size=11), text_color=TEXT_MUTED)
+        self.auto_watch_status.pack(side="left", padx=12)
+
+        # ── Log ───────────────────────────────────────────────────
+        log_card = self._card(parent, "📋 Automation Log")
+        self.auto_log = ctk.CTkTextbox(
+            log_card, height=120,
+            font=ctk.CTkFont(size=10, family="Consolas"),
+            fg_color=BG_DARK, text_color="#c9d1d9",
+            border_width=1, border_color="#30363d")
+        self.auto_log.pack(fill="both", expand=True)
+        self.auto_log.insert("end", "[VEdit v3.0] Automation tab ready.\n")
+
+        # State
+        self._auto_video_path = None
+        self._auto_stories    = []
+        self._watch_thread    = None
+        self._watch_stop      = threading.Event()
+
+    # ── Automation helpers ────────────────────────────────────────
+    def _auto_log(self, msg: str) -> None:
+        ts = datetime.datetime.now().strftime("%H:%M:%S")
+        self.after(0, lambda: (
+            self.auto_log.insert("end", f"[{ts}] {msg}\n"),
+            self.auto_log.see("end")
+        ))
+
+    def _auto_signin(self) -> None:
+        self.auto_auth_status.configure(text="⏳ Opening browser...", text_color=WARNING)
+
+        def on_ok(token):
+            self.after(0, lambda: self.auto_auth_status.configure(
+                text="✅ Signed in to Google Drive", text_color=SUCCESS))
+            self._auto_log("✅ Google sign-in successful.")
+
+        def on_err(msg):
+            self.after(0, lambda: self.auto_auth_status.configure(
+                text=f"❌ Sign-in failed: {msg}", text_color=DANGER))
+            self._auto_log(f"❌ Sign-in failed: {msg}")
+
+        start_oauth_flow(on_success=on_ok, on_error=on_err)
+
+    def _auto_signout(self) -> None:
+        SETTINGS["oauth_token"]  = ""
+        SETTINGS["oauth_expiry"] = 0
+        _oauth_token_cache.clear()
+        save_settings()
+        self.auto_auth_status.configure(
+            text="⚠ Signed out", text_color=WARNING)
+        self._auto_log("Signed out of Google.")
+
+    def _auto_save_config(self) -> None:
+        SETTINGS["apps_script_url"] = self.auto_script_url.get().strip()
+        SETTINGS["drive_folder_id"] = self.auto_folder_id.get().strip()
+        save_settings()
+        self._auto_log("✅ Config saved to settings.json")
+        messagebox.showinfo("✅ Saved", "Automation config saved!")
+
+    def _auto_pick_video(self) -> None:
+        path = filedialog.askopenfilename(
+            title="Select Processed Video",
+            filetypes=[("Video files","*.mp4 *.mov *.mkv *.webm"), ("All","*.*")])
+        if path:
+            self._auto_video_path = Path(path)
+            self.auto_video_label.configure(
+                text=f"📎 {self._auto_video_path.name}  "
+                     f"({self._auto_video_path.stat().st_size // (1024*1024):.1f} MB)",
+                text_color=TEXT_PRIMARY)
+            self._auto_log(f"Selected: {self._auto_video_path.name}")
+
+    def _auto_fetch_stories(self) -> None:
+        url = self.auto_script_url.get().strip() or SETTINGS.get("apps_script_url","")
+        if not url:
+            messagebox.showwarning("Missing", "Enter Apps Script URL first.")
+            return
+        self._auto_log("Fetching stories from sheet...")
+        def worker():
+            stories = sheet_fetch_stories(url)
+            self._auto_stories = stories
+            titles  = [f"{s.get('Title','?')} [{s.get('Status','?')}]"
+                       for s in stories]
+            if not titles:
+                titles = ["-- No stories found --"]
+            self.after(0, lambda: self.auto_story_combo.configure(values=titles))
+            self.after(0, lambda: self.auto_story_combo.set(titles[0]))
+            self._auto_log(f"✅ Fetched {len(stories)} stories.")
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _auto_upload(self) -> None:
+        if not self._auto_video_path or not self._auto_video_path.exists():
+            messagebox.showwarning("No file", "Select a video file first.")
+            return
+        token = get_oauth_token()
+        if not token:
+            messagebox.showwarning("Not signed in", "Sign in with Google first.")
+            return
+
+        folder_id  = self.auto_folder_id.get().strip() or SETTINGS.get("drive_folder_id","")
+        script_url = self.auto_script_url.get().strip() or SETTINGS.get("apps_script_url","")
+
+        # Find selected story title
+        sel_text = self.auto_story_var.get()
+        story_title = sel_text.split(" [")[0] if "[" in sel_text else sel_text
+
+        self.auto_upload_status.configure(text="⏳ Uploading to Drive...", text_color=WARNING)
+        self.auto_upload_progress.set(0)
+
+        def worker():
+            try:
+                self._auto_log(f"Uploading: {self._auto_video_path.name}")
+
+                def on_pct(pct):
+                    self.after(0, lambda: self.auto_upload_progress.set(pct / 100))
+                    self.after(0, lambda: self.auto_upload_status.configure(
+                        text=f"⏳ Uploading... {pct}%", text_color=WARNING))
+
+                drive_url = drive_upload_file(self._auto_video_path, folder_id, on_pct)
+
+                self._auto_log(f"✅ Uploaded: {drive_url}")
+
+                # Update sheet
+                if script_url and story_title:
+                    self._auto_log(f"Updating sheet for: {story_title}")
+                    ok = sheet_save_video_url(story_title, drive_url, script_url)
+                    if ok:
+                        self._auto_log("✅ Sheet updated — status set to Ready")
+                    else:
+                        self._auto_log("⚠ Sheet update failed (Drive upload OK)")
+
+                self.after(0, lambda: self.auto_upload_status.configure(
+                    text=f"✅ Done! {drive_url[:60]}...", text_color=SUCCESS))
+                self.after(0, lambda: self.auto_upload_progress.set(1.0))
+                messagebox.showinfo("✅ Upload Complete",
+                                    f"Video uploaded!\n\n{drive_url}\n\n"
+                                    f"Sheet updated for: {story_title}")
+            except Exception as e:
+                self._auto_log(f"❌ Error: {e}")
+                self.after(0, lambda: self.auto_upload_status.configure(
+                    text=f"❌ {e}", text_color=DANGER))
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _auto_toggle_watch(self) -> None:
+        if self.auto_watch_var.get():
+            self._start_folder_watch()
+        else:
+            self._stop_folder_watch()
+
+    def _start_folder_watch(self) -> None:
+        self._watch_stop.clear()
+        self.auto_watch_status.configure(text="● Watching...", text_color=SUCCESS)
+        self._auto_log(f"👁 Watching: {SETTINGS['pending_dir']}")
+
+        def watcher():
+            pending = Path(SETTINGS["pending_dir"])
+            seen    = set(p.name for p in pending.iterdir()
+                          if p.is_file() and p.suffix.lower() in VIDEO_EXTS) \
+                      if pending.exists() else set()
+            while not self._watch_stop.is_set():
+                time.sleep(5)
+                if not pending.exists():
+                    continue
+                current = set(p.name for p in pending.iterdir()
+                              if p.is_file() and p.suffix.lower() in VIDEO_EXTS)
+                new_files = current - seen
+                for fname in new_files:
+                    fpath = pending / fname
+                    self._auto_log(f"🆕 New file detected: {fname}")
+                    # Wait for file to finish copying (size stable)
+                    prev_size = -1
+                    for _ in range(12):   # wait up to 60s
+                        time.sleep(5)
+                        try:
+                            sz = fpath.stat().st_size
+                        except Exception:
+                            sz = -1
+                        if sz == prev_size and sz > 0:
+                            break
+                        prev_size = sz
+                    # Set as current video and trigger batch for this file
+                    self._auto_video_path = fpath
+                    self.after(0, lambda f=fpath: self.auto_video_label.configure(
+                        text=f"📎 {f.name}", text_color=TEXT_PRIMARY))
+                    self._auto_log(f"▶ Auto-processing: {fname}")
+                    # Derive story title from filename (remove extension, replace _ with space)
+                    stem = fpath.stem.replace("_", " ").replace("-", " ")
+                    self.after(0, lambda t=stem: self.auto_story_var.set(t))
+                seen = current
+
+        self._watch_thread = threading.Thread(target=watcher, daemon=True)
+        self._watch_thread.start()
+
+    def _stop_folder_watch(self) -> None:
+        self._watch_stop.set()
+        self.auto_watch_status.configure(text="● Inactive", text_color=TEXT_MUTED)
+        self._auto_log("👁 Folder watch stopped.")
+
+    # ════════════════════════════════════════════════════════
+    #  TAB 2 — TRIM / SPLIT  (was TAB 1)
     # ════════════════════════════════════════════════════════
     def _build_trim_tab(self, parent):
         self._section_title(parent, "✂️ Trim, Cut & Split Video")
@@ -1660,8 +2425,92 @@ class VideoEditorApp(ctk.CTk):
             pending.mkdir(parents=True, exist_ok=True)
         files = [p for p in sorted(pending.iterdir())
                  if p.is_file() and p.suffix.lower() in VIDEO_EXTS]
+
+        infos = []
+        for p in files:
+            info = get_video_info(str(p)) or {"path": str(p), "filename": p.name, "duration": 0.0, "width": 0, "height": 0, "fps": 0.0, "size": 0}
+            infos.append(info)
+
+        self.batch_files_infos = infos
+        if hasattr(self, "batch_listbox"):
+            self.batch_listbox.delete(0, "end")
+            for i in infos:
+                dur = format_duration(i.get("duration", 0.0) or 0.0)
+                w = i.get("width", 0) or 0
+                h = i.get("height", 0) or 0
+                sz = format_size(i.get("size", 0) or 0)
+                self.batch_listbox.insert("end", f"{i.get('filename','')}   [{dur}]   {w}x{h}   {sz}")
+
         self.batch_status.configure(
             text=f"📂 Found {len(files)} video(s) in: {pending.resolve()}")
+
+        if files:
+            self.batch_run_btn.configure(state="normal")
+        else:
+            self.batch_run_btn.configure(state="disabled")
+        self.batch_details.configure(text="")
+
+    def _batch_select_all(self):
+        if hasattr(self, "batch_listbox"):
+            self.batch_listbox.selection_set(0, "end")
+            self._update_batch_details()
+
+    def _batch_select_none(self):
+        if hasattr(self, "batch_listbox"):
+            self.batch_listbox.selection_clear(0, "end")
+            self._update_batch_details()
+
+    def _on_batch_select(self, _event=None):
+        self._update_batch_details()
+
+    def _update_batch_details(self):
+        if not hasattr(self, "batch_listbox"):
+            return
+        sel = list(self.batch_listbox.curselection())
+
+        def _set_details(text):
+            if hasattr(self, "batch_details"):
+                self.batch_details.configure(state="normal")
+                self.batch_details.delete("1.0", "end")
+                self.batch_details.insert("end", text)
+                self.batch_details.configure(state="disabled")
+
+        if not sel:
+            if self.batch_files_infos:
+                _set_details("Selected: 0\n(will process ALL scanned videos)")
+                self.batch_run_btn.configure(state="normal")
+            else:
+                _set_details("Selected: 0\nScan folder first.")
+                self.batch_run_btn.configure(state="disabled")
+            return
+
+        lines = [f"Selected: {len(sel)} file(s)\n"]
+        total_dur = 0.0
+        total_size = 0
+        for idx in sel:
+            try:
+                i = self.batch_files_infos[idx]
+                dur  = float(i.get("duration", 0.0) or 0.0)
+                sz   = int(i.get("size", 0) or 0)
+                w    = i.get("width", 0) or 0
+                h    = i.get("height", 0) or 0
+                fps  = i.get("fps", 0) or 0
+                total_dur  += dur
+                total_size += sz
+                lines.append(
+                    f"{'─'*30}\n"
+                    f"📄 {i.get('filename','?')}\n"
+                    f"⏱ Duration : {format_duration(dur)}\n"
+                    f"📺 Size     : {w}×{h}  {fps}fps\n"
+                    f"💾 File size: {format_size(sz)}\n"
+                )
+            except Exception:
+                pass
+        lines.append(f"{'─'*30}\n")
+        lines.append(f"⏱ Total dur : {format_duration(total_dur)}\n")
+        lines.append(f"💾 Total size: {format_size(total_size)}\n")
+        _set_details("".join(lines))
+        self.batch_run_btn.configure(state="normal")
 
     def _batch_run(self):
         if not FFMPEG_BIN:
@@ -1670,77 +2519,104 @@ class VideoEditorApp(ctk.CTk):
 
         self.cancel_event.clear()
         _CANCEL_EVENT.clear()
-        self._log("[BATCH] Starting batch")
+        self._log("[BATCH] Starting batch", "info")
 
-        # Update SETTINGS from UI
+        # ── Update SETTINGS from UI fields ──────────────────────
         SETTINGS["pending_dir"] = self.batch_pending_var.get()
         SETTINGS["done_dir"]    = self.batch_done_var.get()
         SETTINGS["ending"]["enabled"] = self.batch_ending_var.get()
+        SETTINGS["logo"]["enabled"]   = self.batch_logo_var.get()
+        # Crop values
+        try: SETTINGS["crop_left"]   = int(self.crop_left_var.get()   or 0)
+        except: pass
+        try: SETTINGS["crop_top"]    = int(self.crop_top_var.get()    or 0)
+        except: pass
+        try: SETTINGS["crop_right"]  = int(self.crop_right_var.get()  or 0)
+        except: pass
+        try: SETTINGS["crop_bottom"] = int(self.crop_bottom_var.get() or 0)
+        except: pass
+        # Transitions
+        SETTINGS["random_transitions"] = self.trans_random_var.get()
+        SETTINGS["transitions"] = [t for t, v in self._trans_vars.items() if v.get()]
+        SETTINGS["upload_to_drive"] = self.batch_upload_drive_var.get()
         save_settings()
 
         pending = Path(SETTINGS["pending_dir"])
         done    = Path(SETTINGS["done_dir"])
         done.mkdir(parents=True, exist_ok=True)
 
-        files = [p for p in sorted(pending.iterdir())
-                 if p.is_file() and p.suffix.lower() in VIDEO_EXTS]
+        # Determine files to process
+        files: List[Path] = []
+        if hasattr(self, "batch_listbox") and self.batch_files_infos:
+            sel = list(self.batch_listbox.curselection())
+            for idx in sel:
+                try:
+                    files.append(Path(self.batch_files_infos[idx]["path"]))
+                except Exception:
+                    pass
+        if not files:
+            files = [p for p in sorted(pending.iterdir())
+                     if p.is_file() and p.suffix.lower() in VIDEO_EXTS]
         if not files:
             messagebox.showwarning("No Files",
-                f"No video files found in:\n{pending.resolve()}\n\nAdd files and try again.")
+                f"No video files found in:\n{pending.resolve()}")
             return
 
-        # Get selected profile
-        key = self.batch_profile_var.get().split(":")[0].strip()
+        key     = self.batch_profile_var.get().split(":")[0].strip()
         profile = YOUTUBE_PROFILES.get(key, YOUTUBE_PROFILES["3"])
 
         self.batch_run_btn.configure(state="disabled", text="⏳ Processing...")
-        self.batch_status.configure(text=f"Starting batch — {len(files)} file(s)...")
+        self.batch_status.configure(text=f"Starting — {len(files)} file(s)...")
+        if hasattr(self, "batch_progress_bar"):
+            self.batch_progress_bar.set(0)
+
+        do_drive  = SETTINGS.get("upload_to_drive", False)
+        folder_id = SETTINGS.get("drive_folder_id", "")
+        script_url= SETTINGS.get("apps_script_url", "")
 
         def worker():
             ok_count = fail_count = 0
+            t0 = time.time()
             for i, src in enumerate(files):
-                self.batch_status.configure(
-                    text=f"[{i+1}/{len(files)}] Processing: {src.name}")
+                self.after(0, self.batch_status.configure,
+                           {"text": f"[{i+1}/{len(files)}] {src.name}"})
                 self._set_progress(0, f"Batch {i+1}/{len(files)}")
+                if hasattr(self, "batch_progress_bar"):
+                    self.after(0, lambda v=i/len(files): self.batch_progress_bar.set(v))
 
                 try:
                     duration, has_audio = probe_duration_and_audio(src)
                     trim_end = SETTINGS["trim_end_seconds"] if self.batch_trim_var.get() else 0.0
                     end_time = max(0.0, duration - trim_end) if duration > 0 else duration
 
-                    # Scene detection
                     if self.batch_scene_var.get() and end_time > 0:
-                        scenes = detect_scene_changes(src, SETTINGS["scene_threshold"])
+                        scenes   = detect_scene_changes(src, SETTINGS["scene_threshold"])
                         segments = build_segments(scenes, end_time, SETTINGS["min_scene_seconds"])
                     else:
                         segments = [(0.0, end_time or duration)]
 
-                    # Show scene picker if multiple scenes (must run on main thread)
                     kept_segments = segments
                     if len(segments) > 1:
                         result_holder = [None]
                         done_event    = threading.Event()
-
                         def show_dialog():
                             dlg = SceneSelectDialog(self, segments)
                             result_holder[0] = dlg.result
                             done_event.set()
-
                         self.after(0, show_dialog)
                         done_event.wait(timeout=300)
                         if result_holder[0]:
                             kept_segments = result_holder[0]
 
-                    out_name = f"{src.stem}__{profile.height}p.mp4"
+                    out_name = f"{src.stem}_{profile.height}p.mp4"
                     out_dir  = done / src.stem
                     out_dir.mkdir(parents=True, exist_ok=True)
                     main_out = out_dir / out_name
                     ending   = Path(SETTINGS["ending"]["path"]) \
                                 if SETTINGS["ending"]["enabled"] else None
-                    use_ending = (ending and ending.exists() and
-                                  self.batch_ending_var.get())
-                    proc_out = out_dir / f"{src.stem}__{profile.height}p__main.mp4" \
-                               if use_ending else main_out
+                    use_ending = (ending and ending.exists() and self.batch_ending_var.get())
+                    proc_out   = out_dir / f"{src.stem}_{profile.height}p__main.mp4" \
+                                 if use_ending else main_out
 
                     ok, err = render_with_transitions(
                         src, proc_out, profile, kept_segments, has_audio,
@@ -1762,6 +2638,30 @@ class VideoEditorApp(ctk.CTk):
                             except Exception: pass
                         ok_count += 1
                         self._set_progress(100, f"✅ {src.name[:20]}")
+                        self._log(f"✅ Done: {src.name} → {main_out}", "success")
+
+                        # ── Upload to Drive if enabled ───────────
+                        if do_drive and folder_id:
+                            try:
+                                self._log(f"☁ Uploading to Drive: {main_out.name}", "info")
+                                self.after(0, self.batch_status.configure,
+                                           {"text": f"Uploading to Drive: {main_out.name}"})
+
+                                drive_url = drive_upload_file(
+                                    main_out, folder_id,
+                                    on_progress=lambda p: self._set_progress(
+                                        p, f"Drive upload {p}%"))
+
+                                self._log(f"✅ Drive URL: {drive_url}", "success")
+
+                                # Update sheet — derive story title from filename
+                                story_title = src.stem.replace("_", " ").replace("-", " ")
+                                if script_url:
+                                    sheet_save_video_url(story_title, drive_url, script_url)
+                                    self._log(f"✅ Sheet updated for: {story_title}", "success")
+
+                            except Exception as ue:
+                                self._log(f"⚠ Drive upload failed: {ue}", "warning")
                     else:
                         fail_count += 1
                         self._set_progress(0, f"❌ Failed: {src.name[:20]}")
@@ -1771,16 +2671,20 @@ class VideoEditorApp(ctk.CTk):
                 except Exception as exc:
                     fail_count += 1
                     self.after(0, lambda e=str(exc), n=src.name: messagebox.showerror(
-                        "Batch Error", f"Error processing: {n}\n\n{e}"))
+                        "Batch Error", f"Error: {n}\n\n{e}"))
 
+            elapsed = int(time.time() - t0)
             final_msg = (f"✅ Batch complete!\n\n"
                          f"Processed: {ok_count}  |  Failed: {fail_count}\n"
-                         f"Output folder: {done.resolve()}")
+                         f"Time: {elapsed}s\n"
+                         f"Output: {done.resolve()}")
             self.after(0, lambda: messagebox.showinfo("✅ Batch Done", final_msg))
             self.after(0, lambda: self.batch_status.configure(
-                text=f"Done! ✅ {ok_count} succeeded  ❌ {fail_count} failed"))
+                text=f"Done! ✅ {ok_count} OK  ❌ {fail_count} failed  ⏱ {elapsed}s"))
             self.after(0, lambda: self.batch_run_btn.configure(
-                state="normal", text="🚀 Start Batch Processing"))
+                state="normal", text="▶ PROCESS"))
+            if hasattr(self, "batch_progress_bar"):
+                self.after(0, lambda: self.batch_progress_bar.set(1.0))
             self._set_progress(100, "Batch complete!")
 
         threading.Thread(target=worker, daemon=True).start()
@@ -2043,7 +2947,7 @@ class VideoEditorApp(ctk.CTk):
         h   = self.resize_h.get().strip() or "1080"
         out = self._out(f"resize_{w}x{h}")
         self._run_task([FFMPEG_BIN,"-y","-i",src,
-                        "-vf",f"scale={w}:{h}:flags=lanczos","-c:a","copy",out],
+                        "-vf",f"scale={w}:{h}:flags=bilinear","-c:a","copy",out],
                        out, f"Resize {w}×{h}")
 
     def _do_crop(self):
@@ -2101,8 +3005,7 @@ class VideoEditorApp(ctk.CTk):
         # Add crop filter
         crop_filter = f"crop={cw}:{ch}:{l}:{t}"
         if vf_filters:
-            vf_filters.append(crop_filter)
-            vf = ",".join(vf_filters)
+            vf = ",".join([crop_filter] + vf_filters)
         else:
             vf = crop_filter
         
