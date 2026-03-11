@@ -1155,6 +1155,8 @@ class VideoEditorApp(ctk.CTk):
         self.geometry("1320x820")
         self.minsize(1100, 700)
         self.configure(fg_color=BG_DARK)
+        # Start maximized — open full screen on launch
+        self.after(0, lambda: self.state("zoomed"))
 
         # App state
         self.loaded_files  = []
@@ -1221,15 +1223,31 @@ class VideoEditorApp(ctk.CTk):
         ctk.CTkLabel(bar, text=ff_status,
                      font=ctk.CTkFont(size=10), text_color=ff_color).pack(side="left", padx=16)
 
-        ctk.CTkButton(bar, text="⚙ Settings", width=120, height=30,
-                      fg_color=BG_SIDEBAR, hover_color="#30363d",
-                      command=lambda: SettingsDialog(self)).pack(side="right", padx=6)
-        ctk.CTkButton(bar, text="⛔ Stop", width=90, height=30,
+        # ── RIGHT SIDE — pack RIGHT-to-LEFT so PROCESS lands far right ──
+
+        # ▶ PROCESS — biggest button, top-right corner, always visible
+        self.topbar_process_btn = ctk.CTkButton(
+            bar, text="▶  PROCESS",
+            width=160, height=42,
+            fg_color="#1f6feb", hover_color="#1558c0",
+            font=ctk.CTkFont(size=16, weight="bold"),
+            corner_radius=6,
+            command=self._batch_run)
+        self.topbar_process_btn.pack(side="right", padx=10, pady=6)
+
+        # Separator line between PROCESS and other buttons
+        ctk.CTkFrame(bar, width=2, height=36, fg_color="#30363d").pack(side="right", padx=4)
+
+        ctk.CTkButton(bar, text="⛔ Stop", width=90, height=34,
                       fg_color=DANGER, hover_color="#b62324",
-                      command=self._on_cancel).pack(side="right", padx=6)
-        ctk.CTkButton(bar, text="📁 Output Folder", width=140, height=30,
+                      font=ctk.CTkFont(size=12, weight="bold"),
+                      command=self._on_cancel).pack(side="right", padx=4)
+        ctk.CTkButton(bar, text="⚙ Settings", width=110, height=34,
                       fg_color=BG_SIDEBAR, hover_color="#30363d",
-                      command=self._pick_output_dir).pack(side="right", padx=6)
+                      command=lambda: SettingsDialog(self)).pack(side="right", padx=4)
+        ctk.CTkButton(bar, text="📁 Output", width=110, height=34,
+                      fg_color=BG_SIDEBAR, hover_color="#30363d",
+                      command=self._pick_output_dir).pack(side="right", padx=4)
         ctk.CTkLabel(bar, textvariable=self.output_dir,
                      font=ctk.CTkFont(size=10), text_color=TEXT_MUTED).pack(side="right", padx=4)
 
