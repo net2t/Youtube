@@ -485,9 +485,11 @@ def build_segments(scene_changes: list, end_time: float, min_len: float) -> list
 #  BATCH RENDERING ENGINE  (from Script 1, adapted)
 # ════════════════════════════════════════════════════════════════
 def _pick_transition() -> str:
-    if not SETTINGS["random_transitions"] or not SETTINGS["transitions"]:
+    # If no transitions are checked or random is off → always use fade as safe default
+    active = SETTINGS.get("transitions", [])
+    if not SETTINGS.get("random_transitions", True) or not active:
         return "fade"
-    picked = random.choice(SETTINGS["transitions"])
+    picked = random.choice(active)
     if picked == "wipe":
         return random.choice(["wipeleft","wiperight","wipeup","wipedown"])
     if picked == "slide":
@@ -2609,14 +2611,19 @@ class VideoEditorApp(ctk.CTk):
 
                 try:
                     duration, has_audio = probe_duration_and_audio(src)
+                    self._log(f"📄 File   : {src.name}", "info")
+                    self._log(f"⏱ Duration: {format_duration(duration)}  |  Audio: {has_audio}", "info")
                     trim_end = SETTINGS["trim_end_seconds"] if self.batch_trim_var.get() else 0.0
                     end_time = max(0.0, duration - trim_end) if duration > 0 else duration
 
                     if self.batch_scene_var.get() and end_time > 0:
+                        self._log("🔍 Detecting scene changes...", "info")
                         scenes   = detect_scene_changes(src, SETTINGS["scene_threshold"])
                         segments = build_segments(scenes, end_time, SETTINGS["min_scene_seconds"])
+                        self._log(f"🎬 Scenes found: {len(segments)}", "info")
                     else:
                         segments = [(0.0, end_time or duration)]
+                        self._log("🎬 No scene detection — single segment", "info")
 
                     kept_segments = segments
                     if len(segments) > 1:
@@ -2630,17 +2637,34 @@ class VideoEditorApp(ctk.CTk):
                         done_event.wait(timeout=300)
                         if result_holder[0]:
                             kept_segments = result_holder[0]
+                            self._log(f"✅ Keeping {len(kept_segments)} segment(s)", "success")
 
                     out_name = f"{src.stem}_{profile.height}p.mp4"
                     out_dir  = done / src.stem
                     out_dir.mkdir(parents=True, exist_ok=True)
                     main_out = out_dir / out_name
+                    self._log(f"📤 Output : {main_out}", "info")
+
                     ending   = Path(SETTINGS["ending"]["path"]) \
                                 if SETTINGS["ending"]["enabled"] else None
                     use_ending = (ending and ending.exists() and self.batch_ending_var.get())
                     proc_out   = out_dir / f"{src.stem}_{profile.height}p__main.mp4" \
                                  if use_ending else main_out
 
+                    # ── Live FFmpeg line callback → log panel ────
+                    def ffmpeg_line(line: str):
+                        line = line.strip()
+                        if not line:
+                            return
+                        # Show frame/fps/size lines as progress info
+                        if line.startswith("frame=") or "time=" in line:
+                            self._log(f"  ▸ {line}", "info")
+                        elif "error" in line.lower() or "invalid" in line.lower():
+                            self._log(f"  ⚠ {line}", "error")
+                        elif line.startswith("[") or "warning" in line.lower():
+                            self._log(f"  ⚠ {line}", "warning")
+
+                    self._log(f"⚙ Rendering with profile: {profile.label}  |  Transition: {SETTINGS.get('transitions') or ['fade']}", "info")
                     ok, err = render_with_transitions(
                         src, proc_out, profile, kept_segments, has_audio,
                         progress_cb=lambda p: self._set_progress(p, f"Rendering {src.name[:20]}"))
@@ -2662,6 +2686,8 @@ class VideoEditorApp(ctk.CTk):
                         ok_count += 1
                         self._set_progress(100, f"✅ {src.name[:20]}")
                         self._log(f"✅ Done: {src.name} → {main_out}", "success")
+                        sz = main_out.stat().st_size if main_out.exists() else 0
+                        self._log(f"   Output size: {format_size(sz)}", "success")
 
                         # ── Upload to Drive if enabled ───────────
                         if do_drive and folder_id:
@@ -2681,18 +2707,21 @@ class VideoEditorApp(ctk.CTk):
                                 story_title = src.stem.replace("_", " ").replace("-", " ")
                                 if script_url:
                                     sheet_save_video_url(story_title, drive_url, script_url)
-                                    self._log(f"✅ Sheet updated for: {story_title}", "success")
+                                    self._log(f"✅ Sheet updated → Ready: {story_title}", "success")
 
                             except Exception as ue:
                                 self._log(f"⚠ Drive upload failed: {ue}", "warning")
                     else:
                         fail_count += 1
                         self._set_progress(0, f"❌ Failed: {src.name[:20]}")
+                        self._log(f"❌ FAILED: {src.name}", "error")
+                        self._log(f"   Error: {err[:300]}", "error")
                         self.after(0, lambda e=err, n=src.name: messagebox.showerror(
                             "Batch Error", f"Failed: {n}\n\n{e}"))
 
                 except Exception as exc:
                     fail_count += 1
+                    self._log(f"❌ EXCEPTION: {src.name} → {exc}", "error")
                     self.after(0, lambda e=str(exc), n=src.name: messagebox.showerror(
                         "Batch Error", f"Error: {n}\n\n{e}"))
 
